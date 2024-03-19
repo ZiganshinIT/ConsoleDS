@@ -6,6 +6,7 @@ uses
   Winapi.Windows,
 
   System.SysUtils, System.Variants, System.Classes, System.StrUtils, System.TypInfo,
+  System.Types, System.IOUtils, ActiveX,
 
   DSUtils, DSTypes,
 
@@ -23,13 +24,16 @@ type
     procedure GetConfigAndPlatformByCondition(const Condition: string; out PlatformType: TPlatformEnum; out Config: TConfigEnum);
     procedure LoadSettings;
   public
-    constructor Create;
+    constructor Create;                                                         overload;
+    constructor Create(const FileName: string);                                 overload;
     destructor Destroy;
+
     procedure LoadFromFile(const FileName: string);
     property Resources: TArray<string> read FResources write FResources;
     function GetDefinies(const Platforms : array of TPlatformEnum; const Configs: array of TConfigEnum): TArray<string>;
     function GetSearchPath(const Platforms : array of TPlatformEnum; const Configs: array of TConfigEnum): TArray<string>;
     function GetOutput(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
+    function GetDebuggerFiles(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): TArray<string>;
     procedure ReLinkSearchPathTo(const NewLink: string);
   end;
 
@@ -51,6 +55,12 @@ end;
 constructor TDprojInfo.Create;
 begin
   FXMLDoc := TXMLDocument.Create(nil);
+end;
+
+constructor TDprojInfo.Create(const FileName: string);
+begin
+  self.Create;
+  self.LoadFromFile(FileName);
 end;
 
 destructor TDprojInfo.Destroy;
@@ -83,6 +93,41 @@ begin
       Config := ce;
       BREAK;
     end;
+  end;
+end;
+
+function TDprojInfo.GetDebuggerFiles(const PlatformTyp: TPlatformEnum;
+  const ConfigTyp: TConfigEnum): TArray<string>;
+
+  function IsContain(const f: string; const Arr: TArray<string>): Boolean;
+  begin
+    result := False;
+    for var Value in Arr do begin
+      if SameText(Value, f) then
+        exit(True);
+    end;
+  end;
+
+  function ParseFiles(const Dir: string): TArray<string>;
+  var
+    FoundFiles: TStringDynArray;
+    FileName: string;
+  begin
+    if DirectoryExists(Dir) then begin
+      FoundFiles := TDirectory.GetFiles(Dir, '*.*', TSearchOption.soAllDirectories);
+      for FileName in FoundFiles do begin
+        var name := ExtractFileNameWithoutExt(FileName);
+        if IsContain(name, result) then
+          result := result + [name];
+      end;
+    end;
+  end;
+
+begin
+  var debuggerPaths := self.ConfigSettings[PlatformTyp][ConfigTyp][DebuggerSourcePath];
+  var PathArr := debuggerPaths.Split([';']);
+  for var path in PathArr do begin
+    result := result + ParseFiles(path);
   end;
 end;
 
@@ -143,6 +188,7 @@ end;
 
 procedure TDprojInfo.LoadFromFile(const FileName: string);
 begin
+  CoInitializeEx(nil, COINIT_MULTITHREADED);
 
   if FileExists(FileName) then begin
     if FileName.EndsWith('.dproj') then begin
@@ -240,6 +286,8 @@ begin
   FXMLDoc.SaveToFile(NewLink);
 end;
 
-
-
 end.
+
+
+
+

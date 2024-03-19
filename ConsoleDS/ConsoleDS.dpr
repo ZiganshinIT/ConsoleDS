@@ -1,4 +1,4 @@
-program ConsoleDS;
+﻿program ConsoleDS;
 
 {$APPTYPE CONSOLE}
 
@@ -43,7 +43,7 @@ type
     FDcuFiles:   TDictionary<string, string>;
     FDprojFiles: TDictionary<string, string>;
     FFiles:      TDictionary<string, integer>;
-    // <��� ����� | ������, � ������� �����������>
+    // <имя юнита | проект, в котором объявляется>
     FUnitLocation: TDictionary<string, string>;
 
     FUsedFiles:   TStringList;
@@ -56,14 +56,22 @@ type
     procedure FindFilesInFolder(const Folder: string);
 
     procedure AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
-    function AddFileWithExt(const filename, ext: string): string;
 
+    function TryAddFileWithExt(const filename, ext: string): Boolean;
     function TryAddFile(const FilePath: string): Boolean;
+    function TryAddFiles(const Files: array of string): Integer;
 
     procedure DoScan(const FilePath: string);
-
     procedure DoScanUnit(const UnitPath: string);
     procedure DoScanRCFiles(const RCFilePath: string);
+
+    {UnitLocation}
+    procedure AddFileLocation(const F: string);
+    procedure AddFilesLocation(const Files: array of string);
+
+    {IgnoreFiles}
+    procedure AddIgnoreFile(const F: string);
+    procedure AddIgnoreFiles(const Files: array of string);
   public
     constructor Create; overload;
     destructor Destroy; overload;
@@ -89,14 +97,57 @@ const
 
 { TScanThread }
 
-{��������� ���� ���� ����������}
-function TScanThread.AddFileWithExt(const filename, ext: string): string;
+{Добавляет файл меня расширение}
+function TScanThread.TryAddFileWithExt(const filename, ext: string): Boolean;
 begin
-  result := ExtractFilePath(filename)+ExtractFileNameWithoutExt(filename)+ext;
-  TryAddFile(result);
+  var fn := ExtractFilePath(filename)+ExtractFileNameWithoutExt(filename)+ext;
+  result := TryAddFile(fn);
 end;
 
-{��������� �������������� �����, �������������� � �����}
+{Добавляет в словарь имя юнита и проект в кототром он определен}
+procedure TScanThread.AddFileLocation(const F: string);
+var
+  FoundFiles: TStringDynArray;
+  FileName: string;
+  Location: string;
+begin
+  if DirectoryExists(f) then begin
+    FoundFiles := TDirectory.GetFiles(f, '*.*', TSearchOption.soAllDirectories);
+    for FileName in FoundFiles do begin
+      var name := ExtractFileNameWithoutExt(FileName);
+      if not fUnitLocation.ContainsKey(name) then begin
+        Location := ExtractFileName(ExtractFileDir(FileName));
+        fUnitLocation.Add(name, Location);
+      end;
+    end;
+  end;
+end;
+
+{Добавляет в словарь имя юнита и проект в кототром он определен}
+procedure TScanThread.AddFilesLocation(const Files: array of string);
+begin
+  for var f in Files do begin
+    AddFileLocation(f);
+  end;
+end;
+
+{Формирует массив файлов которые нужно проигнорировать}
+procedure TScanThread.AddIgnoreFiles(const Files: array of string);
+begin
+  for var f in Files do begin
+    AddIgnoreFile(f);
+  end;
+end;
+
+{Формирует массив файлов которые нужно проигнорировать}
+procedure TScanThread.AddIgnoreFile(const F: string);
+begin
+  if FIgnoreFiles.IndexOf(ExtractFileNameWithoutExt(F)) = -1 then begin
+    FIgnoreFiles.Add(ExtractFileNameWithoutExt(F));
+  end;
+end;
+
+{Добавляет дополнительные файлы, использующиеся в юните}
 procedure TScanThread.AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
 begin
   for var ValuesArr in UnitInfo.OtherUsedItems.Values do begin
@@ -137,7 +188,7 @@ begin
   FreeAndNil(FPascalUnitExtractor);
 end;
 
-{������ ������������ �����}
+{Анализ сканируемого файла}
 procedure TScanThread.DoScan(const FilePath: string);
 var
   UnitInfo: IUnitInfo;
@@ -152,7 +203,7 @@ begin
   end;
 end;
 
-{��������� ����� ��������}
+{Сканирует файлы ресурсов}
 procedure TScanThread.DoScanRCFiles(const RCFilePath: string);
 begin
   if FileExists(RCFilePath) then begin
@@ -164,10 +215,10 @@ begin
       TryAddFile(InnerFilePath)
     end;
   end else
-    raise Exception.Create(RCFilePath + ' �� ����������')
+    raise Exception.Create(RCFilePath + ' не существует')
 end;
 
-{���������� ������ Delphi}
+{Добавдение файлов Delphi}
 procedure TScanThread.DoScanUnit(const UnitPath: string);
 var
   UnitInfo: IUnitInfo;
@@ -186,23 +237,54 @@ begin
     for var un in UnitInfo.UsedUnits do begin
       if self.Terminated then
         exit;
-      var du := LowerCase(un.DelphiUnitName);
-      if FUsedFiles.IndexOf(du) = -1 then begin
-        if fPasFiles.TryGetValue(du + '.pas', pas) OR fDcuFiles.TryGetValue(du + '.dcu', pas) then
-          TryAddFile(pas)
+
+      {Пропуск файлов без пути распложения}
+      if (UnitPath.EndsWith('.dpr')) AND (un.InFilePosition = 0) then begin
+        continue;
       end;
+
+      var du := LowerCase(un.DelphiUnitName);
+
+      {Нужно ли проигнорировать?}
+      if FIgnoreFiles.IndexOf(du) <> -1 then
+        continue;
+
+      if fPasFiles.TryGetValue(du + '.pas', pas) OR fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
+        TryAddFile(pas)
+      end;
+
     end;
   end;
 end;
 
 procedure TScanThread.Execute;
+var
+  DprojFile: TDprojInfo;
 begin
   inherited;
   TryAddFile(SeedFile);
 
   if SameText(ExtractFileExt(SeedFile), '.dpr') then begin
-    AddFileWithExt(SeedFile, '.dproj');
-    AddFileWithExt(SeedFile, '._icon.ico');
+    if TryAddFileWithExt(SeedFile, '.dproj') then begin
+      var dprojPath := StringReplace(SeedFile, '.dpr', '.dproj', [rfReplaceAll, rfIgnoreCase]);
+      DprojFile := TDprojInfo.Create(dprojPath);
+      TryAddFiles(DprojFile.Resources); // Добавляет ресурсы проекта
+
+      { Добавляет доступные define проекта }
+      with FPascalUnitExtractor do begin
+        DefineAnalizator.EnableDefines := DprojFile.GetDefinies([All, Win64], [Base, Cfg_2]);
+      end;
+
+      {Формируем словарь юнитов и мест их определения}
+      AddFileLocation(DprojFile.GetOutput(All, Base));
+      AddFilesLocation(DprojFile.GetSearchPath([All], [Base]));
+
+      {Формируем массив файлов, которые нужно проигнорировать}
+      AddIgnoreFile('SVG2Png');
+      AddIgnoreFiles(DprojFile.GetDebuggerFiles(Win64, Cfg_2));
+
+    end;
+    TryAddFileWithExt(SeedFile, '._icon.ico');
   end;
 
   FindFilesInFolder(SearchPath);
@@ -242,7 +324,7 @@ begin
   end;
 end;
 
-{���������� ������, ������������� � �������� �������}
+{Добавление файлов, синхронизация с основным потоком}
 function TScanThread.TryAddFile(const FilePath: string): Boolean;
 begin
   result := False;
@@ -250,10 +332,19 @@ begin
     result := True;
     var index := fUsedFiles.Add(FilePath);
     FFiles.Add(ExtractFileName(FilePath), index);
-    // ������������������
+    // Потокобезопасность
     CS.Enter;
       List.Add(FilePath);
     CS.Leave;
+  end;
+end;
+
+function TScanThread.TryAddFiles(const Files: array of string): Integer;
+begin
+  result := 0;
+  for var f in Files do begin
+    if TryAddFile(f) then
+      Inc(result);
   end;
 end;
 
@@ -274,7 +365,7 @@ begin
         if (InputRecord.EventType = KEY_EVENT) and InputRecord.Event.KeyEvent.bKeyDown then begin
           case InputRecord.Event.KeyEvent.wVirtualKeyCode of
             VK_ESCAPE: begin
-              Writeln('������ ������� Escape.');
+              Writeln('Нажата клавиша Escape.');
               Finish := True;
             end;
           end;
@@ -283,7 +374,7 @@ begin
     end;
   except
     on E: Exception do
-      Writeln('������: ', E.Message);
+      Writeln('Ошибка: ', E.Message);
   end;
 end;
 
@@ -309,7 +400,7 @@ begin
   while True do begin
 
     case Step of
-    // 1 ����: �������
+    // 1 Этап: Парсинг
     stParsing: begin
 
       if Finish then begin
@@ -321,26 +412,27 @@ begin
 
       if ScanThread = nil then begin
         ScanThread := TScanThread.Create;
-        Writeln('������ ������������.....');
+        Writeln('Начало сканирования.....');
       end;
 
       while Counter < List.Count do begin
         // Progress Bar
-//      Writeln(Counter.ToString + ' �� ' + List.Count.ToString);
+//      Writeln(Counter.ToString + ' из ' + List.Count.ToString);
         Inc(Counter);
       end;
 
       if ScanThread.Finished then begin
         Step := stCoping;
-        Writeln('�������������� - ' + List.Count.ToString + ' ������.');
-        Writeln('����� ������������');
+        Writeln('Просканировано - ' + List.Count.ToString + ' файлов.');
+        Writeln('Конец сканирования');
       end;
 
     end;
 
-    // 2 ����: �����������
+    // 2 Этап: копирование
     stCoping: begin
-      Writeln('������ �����������');
+      Writeln('Начало копирования');
+      Readln;
       exit;
 
     end;
