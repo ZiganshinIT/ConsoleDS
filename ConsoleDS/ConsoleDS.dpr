@@ -32,6 +32,7 @@ type
   (
     stParsing,
     stCoping,
+    stUpdate,
     stNone
   );
 
@@ -95,7 +96,13 @@ var
   SeedFile: string;
   TargetPath: string;
 
+
+
+  AssociatedFiles : TStringList;
+  LastFilesAge    : TArray<Integer>;
+
   List: TStringList;
+
   CS: TCriticalSection;
 
   // Threads
@@ -414,6 +421,9 @@ begin
     var DestPath := FTargetDir + Name + LocalPath; // результирующее место файла
     var SourcePath := F;
 
+    AssociatedFiles.Add(DestPath);
+    LastFilesAge := LastFilesAge + [FileAge(DestPath)];
+
     if F.EndsWith('.dproj') then begin
       DprojFile.ReLinkSearchPathTo(DestPath);
       continue;
@@ -425,7 +435,7 @@ end;
 
 { Other}
 
-procedure Init;
+procedure Initialize;
 begin
   SearchPath := 'C:\Source\SprutCAM';
   SeedFile   := 'C:\Source\SprutCAM\NCKernel\NCKernel.dpr';
@@ -433,10 +443,17 @@ begin
 
   CS := TCriticalSection.Create;
   List := TStringList.Create;
+
+  AssociatedFiles := TStringList.Create;
+end;
+
+procedure Finalize;
+begin
+
 end;
 
 begin
-  Init;
+  Initialize;
 
   InputThread := TInputThread.Create(True);
   InputThread.FreeOnTerminate := True;
@@ -478,21 +495,47 @@ begin
       // 2 Этап: копирование
       stCoping: begin
 
+        if Finish then begin
+          InputThread.Terminate;
+          CopyThread.Terminate;
+          CopyThread.Free;
+          exit;
+        end;
+
         if CopyThread = nil then begin
           CopyThread := TCopyThread.Create(TargetPath);
           Writeln('Начало копирования.....');
         end;
 
         if CopyThread.Finished then begin
-          Step := stNone;
+          Step := stUpdate;
           Writeln('Конец копирования');
+          Writeln('Начало обновления');
         end;
 
       end;
+
+      // 3 Этап: Синхронизация
+      stUpdate: begin
+
+        if Finish then begin
+          InputThread.Terminate;
+          exit;
+        end;
+
+        for var I := 0 to AssociatedFiles.Count-1 do begin
+          var f := AssociatedFiles[I];
+          if FileAge(f) <> LastFilesAge[I] then begin
+            Writeln(ExtractFileName(f) + ' был обнавлен');
+            var Seed := List[I];
+            CopyFile(PChar(F), PChar(Seed), False);
+            // Обновить файл исходного проекта
+            LastFilesAge[I] := FileAge(f);
+          end;
+        end;
+      end;
     end;
   end;
-
-  ReadLn;
 
   InputThread.Free;
   ScanThread.Free;

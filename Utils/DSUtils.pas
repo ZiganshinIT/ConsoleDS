@@ -208,7 +208,7 @@ end;
 procedure CopyWithDir(const SourceDir, DestDir: string);
 begin
   ForceDirectories(ExtractFileDir(DestDir));
-  CopyFile(PChar(SourceDir), PChar(DestDir), True);
+  CopyFile(PChar(SourceDir), PChar(DestDir), False);
 end;
 
 procedure CopyFolder(const SourceDir, DestDir: string);
