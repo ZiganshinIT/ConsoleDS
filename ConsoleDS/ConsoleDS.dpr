@@ -24,11 +24,15 @@ uses
   DSTypes in '..\Utils\DSTypes.pas',
   DSUtils in '..\Utils\DSUtils.pas';
 
+const
+  SytsemDelimiter = '\';
+
 type
   TStep =
   (
     stParsing,
-    stCoping
+    stCoping,
+    stNone
   );
 
   TInputThread = class(TThread)
@@ -65,16 +69,25 @@ type
     procedure DoScanUnit(const UnitPath: string);
     procedure DoScanRCFiles(const RCFilePath: string);
 
-    {UnitLocation}
+    {Unit Location}
     procedure AddFileLocation(const F: string);
     procedure AddFilesLocation(const Files: array of string);
 
-    {IgnoreFiles}
+    {Ignore Files}
     procedure AddIgnoreFile(const F: string);
     procedure AddIgnoreFiles(const Files: array of string);
   public
     constructor Create; overload;
     destructor Destroy; overload;
+  end;
+
+  TCopyThread = class(TThread)
+  private
+    FTargetDir: string;
+  protected
+    procedure Execute;                                                          override;
+  public
+    constructor Create(const TargetDir: string);                                overload;
   end;
 
 var
@@ -86,8 +99,12 @@ var
   CS: TCriticalSection;
 
   // Threads
-  ScanThread: TScanThread;
   InputThread: TInputThread;
+  ScanThread: TScanThread;
+  CopyThread: TCopyThread;
+
+  // DprojFile:
+  DprojFile: TDprojInfo;
 
 const
   Step: TStep = stParsing;
@@ -258,8 +275,6 @@ begin
 end;
 
 procedure TScanThread.Execute;
-var
-  DprojFile: TDprojInfo;
 begin
   inherited;
   TryAddFile(SeedFile);
@@ -378,6 +393,36 @@ begin
   end;
 end;
 
+{ TCopierThread }
+
+constructor TCopyThread.Create(const TargetDir: string);
+begin
+  inherited Create(False);
+  FTargetDir := TargetDir
+end;
+
+procedure TCopyThread.Execute;
+begin
+  inherited;
+
+  var CommonDir := ExtractCommonPrefix(List); // Общий префикс
+  var Name := StringReplace(CommonDir, GetDownPath(ExtractFileDir(CommonDir)), '', [rfReplaceAll, rfIgnoreCase]);  // Название результирующией папки
+
+  for var F in List do begin
+    var LocalPath := StringReplace(F, CommonDir, '', [rfReplaceAll, rfIgnoreCase]); // путь без общего префикса
+
+    var DestPath := FTargetDir + Name + LocalPath; // результирующее место файла
+    var SourcePath := F;
+
+    if F.EndsWith('.dproj') then begin
+      DprojFile.ReLinkSearchPathTo(DestPath);
+      continue;
+    end;
+
+    CopyWithDir(SourcePath, DestPath)
+  end;
+end;
+
 { Other}
 
 procedure Init;
@@ -400,46 +445,58 @@ begin
   while True do begin
 
     case Step of
-    // 1 Этап: Парсинг
-    stParsing: begin
+      // 1 Этап: Парсинг
+      stParsing: begin
 
-      if Finish then begin
-        InputThread.Terminate;
-        ScanThread.Terminate;
-        ScanThread.Free;
-        exit;
+        if Finish then begin
+          InputThread.Terminate;
+          ScanThread.Terminate;
+          ScanThread.Free;
+          exit;
+        end;
+
+        if ScanThread = nil then begin
+          ScanThread := TScanThread.Create;
+          Writeln('Начало сканирования.....');
+        end;
+
+        while Counter < List.Count do begin
+          // Progress Bar
+          Inc(Counter);
+        end;
+
+        if ScanThread.Finished then begin
+          Step := stCoping;
+          Writeln('Просканировано - ' + List.Count.ToString + ' файлов.');
+          Writeln('Конец сканирования');
+          ScanThread.Terminate;
+          ScanThread.Free;
+        end;
+
       end;
 
-      if ScanThread = nil then begin
-        ScanThread := TScanThread.Create;
-        Writeln('Начало сканирования.....');
+      // 2 Этап: копирование
+      stCoping: begin
+
+        if CopyThread = nil then begin
+          CopyThread := TCopyThread.Create(TargetPath);
+          Writeln('Начало копирования.....');
+        end;
+
+        if CopyThread.Finished then begin
+          Step := stNone;
+          Writeln('Конец копирования');
+        end;
+
       end;
-
-      while Counter < List.Count do begin
-        // Progress Bar
-//      Writeln(Counter.ToString + ' из ' + List.Count.ToString);
-        Inc(Counter);
-      end;
-
-      if ScanThread.Finished then begin
-        Step := stCoping;
-        Writeln('Просканировано - ' + List.Count.ToString + ' файлов.');
-        Writeln('Конец сканирования');
-      end;
-
-    end;
-
-    // 2 Этап: копирование
-    stCoping: begin
-      Writeln('Начало копирования');
-      Readln;
-      exit;
-
     end;
   end;
 
-  end;
+  ReadLn;
 
+  InputThread.Free;
+  ScanThread.Free;
+  CopyThread.Free;
 
 end.
 

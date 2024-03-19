@@ -20,6 +20,7 @@ uses
   function ExtractFileNameWithoutExt(const fn: string): string;
   function ExtractCommonPrefix(const path1, path2: string): string;             overload;
   function ExtractCommonPrefix(list: TListBox): string;                         overload;
+  function ExtractCommonPrefix(list: TStringList): string;                      overload;
   function GetRelativeLink(const FromFile, ToFile: string): string;
   function CalcPath(RelPath: string; AbsPath: string): string;
 
@@ -120,6 +121,18 @@ begin
       continue;
     end else begin
       result := ExtractCommonPrefix(result, Item);
+    end;
+  end;
+end;
+
+function ExtractCommonPrefix(list: TStringList): string;
+begin
+  result := '';
+  for var Value in list do begin
+    if result.IsEmpty then begin
+      result := Value;
+    end else begin
+      result := ExtractCommonPrefix(result, Value);
     end;
   end;
 end;
