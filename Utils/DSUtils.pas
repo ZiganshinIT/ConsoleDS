@@ -7,10 +7,12 @@ uses
 
   Vcl.Dialogs, Vcl.StdCtrls,
 
+  System.SysUtils, System.StrUtils, System.Math, System.Classes, System.IOUtils,
+  System.Types,
+
   DSTypes,
 
-  System.SysUtils, System.StrUtils, System.Math, System.Classes, System.IOUtils,
-  System.Types;
+  XMLDoc, XMLIntf;
 
   // Dialogs
 //  function OpenDialog(out Path: string; PickFolder: Boolean = False; const FileType: string = ''): Boolean;
@@ -21,6 +23,8 @@ uses
   function ExtractCommonPrefix(const path1, path2: string): string;             overload;
   function ExtractCommonPrefix(list: TListBox): string;                         overload;
   function ExtractCommonPrefix(list: TStringList): string;                      overload;
+  function ExtractCommonPrefix(list: array of TFile): string;                   overload;
+  function ExtractCommonPrefix(list: TFileArray): string;                       overload;
   function GetRelativeLink(const FromFile, ToFile: string): string;
   function CalcPath(RelPath: string; AbsPath: string): string;
 
@@ -29,14 +33,15 @@ uses
 
   function GetDownPath(const path: string): string;
 
-
   // Copy operation
   procedure CopyWithDir(const SourceDir, DestDir: string);
-  procedure CopyFolder(const SourceDir, DestDir: string);
 
   // Read operation
   function ReadRCFile(const FileName: string): TArray<string>;
   function ReadAndFildLocation(const DPRName: string; const FileName: string): string;
+
+  // Dproj opertaion
+  function GetUnitDeclaration(const DprojPath, UnitName: string): string;
 
 implementation
 
@@ -137,6 +142,30 @@ begin
   end;
 end;
 
+function ExtractCommonPrefix(list: array of TFile): string;
+begin
+  result := '';
+  for var Value in list do begin
+    if result.IsEmpty then begin
+      result := Value.Path;
+    end else begin
+      result := ExtractCommonPrefix(result, Value.Path);
+    end;
+  end;
+end;
+
+function ExtractCommonPrefix(list: TFileArray): string;
+begin
+  result := '';
+  for var I := 0 to List.GetCount - 1 do begin
+    if result.IsEmpty then begin
+      result := List[I].Path;
+    end else begin
+      result := ExtractCommonPrefix(result, List[I].Path);
+    end;
+  end;
+end;
+
 function GetRelativeLink(const FromFile, ToFile: string): string;
 /// Формирует относительный путь от FromFile до ToFile
 var
@@ -209,27 +238,6 @@ procedure CopyWithDir(const SourceDir, DestDir: string);
 begin
   ForceDirectories(ExtractFileDir(DestDir));
   CopyFile(PChar(SourceDir), PChar(DestDir), False);
-end;
-
-procedure CopyFolder(const SourceDir, DestDir: string);
-var
-  Files: TStringDynArray;
-  SourceFile, DestFile: string;
-  i: Integer;
-begin
-  if not TDirectory.Exists(DestDir) then
-    TDirectory.CreateDirectory(DestDir);
-
-  Files := TDirectory.GetFiles(SourceDir);
-  for i := 0 to Length(Files) - 1 do
-  begin
-    SourceFile := Files[i];
-    DestFile := TPath.Combine(DestDir, TPath.GetFileName(SourceFile));
-    TFile.Copy(SourceFile, DestFile, True);
-  end;
-
-  for var SubDir in TDirectory.GetDirectories(SourceDir) do
-    CopyFolder(SubDir, TPath.Combine(DestDir, TPath.GetFileName(SubDir)));
 end;
 
 { Read Operation}
@@ -311,5 +319,32 @@ begin
   end;
 end;
 
+{ Dproj Operation }
+function GetUnitDeclaration(const DprojPath, UnitName: string): string;
+var
+  XMLDoc: IXMLDocument;
+  RootNode, ItemGroupNode: IXMLNode;
+begin
+  result := '';
+  try
+    XMLDoc := TXMLDocument.Create(nil);
+    XMLDoc.LoadFromFile(DprojPath);
+
+    // Найти корневой элемент проекта
+    RootNode := XMLDoc.DocumentElement;
+    ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
+    if Assigned(ItemGroupNode) then begin
+      for var I := 0 to ItemGroupNode.ChildNodes.Count-1 do begin
+        var node := ItemGroupNode.ChildNodes.Get(I);
+        if node.LocalName = 'DCCReference' then begin
+          var path := node.Attributes['Include'];
+          if ExtractFileNameWithoutExt(path) = UnitName then
+            exit(path);
+        end
+      end;
+    end;
+  finally
+  end;
+end;
 
 end.

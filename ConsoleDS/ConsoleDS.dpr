@@ -33,6 +33,7 @@ type
     stParsing,
     stCoping,
     stUpdate,
+    stFinish,
     stNone
   );
 
@@ -43,6 +44,7 @@ type
 
   TScanThread = class(TThread)
   private
+    FScanFile: string;
 
     FPasFiles:   TDictionary<string, string>;
     FDcuFiles:   TDictionary<string, string>;
@@ -63,7 +65,7 @@ type
     procedure AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
 
     function TryAddFileWithExt(const filename, ext: string): Boolean;
-    function TryAddFile(const FilePath: string): Boolean;
+    function TryAddFile(const FilePath: string; const Prefix: string = ''): Boolean;
     function TryAddFiles(const Files: array of string): Integer;
 
     procedure DoScan(const FilePath: string);
@@ -78,7 +80,7 @@ type
     procedure AddIgnoreFile(const F: string);
     procedure AddIgnoreFiles(const Files: array of string);
   public
-    constructor Create; overload;
+    constructor Create(CreateSuspended: Boolean; const ScanFile: string = ''); overload;
     destructor Destroy; overload;
   end;
 
@@ -87,8 +89,9 @@ type
     FTargetDir: string;
   protected
     procedure Execute;                                                          override;
+    procedure UpdateDPR(const FileName: string);
   public
-    constructor Create(const TargetDir: string);                                overload;
+    constructor Create(CreateSuspended: Boolean; const TargetDir: string);      overload;
   end;
 
 var
@@ -96,14 +99,16 @@ var
   SeedFile: string;
   TargetPath: string;
 
+  SeedFiles: TFileArray;
+  AssociatedFiles: TFileArray;
+  UpdatedFiles: TFileArray;
 
-
-  AssociatedFiles : TStringList;
-  LastFilesAge    : TArray<Integer>;
-
-  List: TStringList;
+  // Файлы без пути
+  NessaseryFiles: TStringList;
 
   CS: TCriticalSection;
+
+  UpdateItem: array of string;
 
   // Threads
   InputThread: TInputThread;
@@ -114,8 +119,8 @@ var
   DprojFile: TDprojInfo;
 
 const
+  PriorityPrefix: array of string = ['IDL.SprutCAMTech.', ''];
   Step: TStep = stParsing;
-  Finish: Boolean = False;
   Counter: Integer = 0;
 
 
@@ -177,16 +182,18 @@ begin
   for var ValuesArr in UnitInfo.OtherUsedItems.Values do begin
     for var Value in ValuesArr do begin
       var path := CalcPath(Value, UnitPath);
-      if FileExists(path) then begin
-        TryAddFile(path);
-      end;
+      TryAddFile(path);
     end;
   end;
 end;
 
-constructor TScanThread.Create;
+constructor TScanThread.Create(CreateSuspended: Boolean; const ScanFile: string = '');
 begin
-  inherited Create(False);
+  inherited Create(CreateSuspended);
+
+  FScanFile := SeedFile;
+  if ScanFile.IsEmpty then
+    FScanFile := ScanFile;
 
   FPasFiles     :=   TDictionary<string, string>.Create;
   FDcuFiles     :=   TDictionary<string, string>.Create;
@@ -264,6 +271,7 @@ begin
 
       {Пропуск файлов без пути распложения}
       if (UnitPath.EndsWith('.dpr')) AND (un.InFilePosition = 0) then begin
+        NessaseryFiles.Add(un.DelphiUnitName);
         continue;
       end;
 
@@ -273,10 +281,27 @@ begin
       if FIgnoreFiles.IndexOf(du) <> -1 then
         continue;
 
-      if fPasFiles.TryGetValue(du + '.pas', pas) OR fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
-        TryAddFile(pas)
+      {Ищем объявление юнита}
+      var location: string;
+      if FUnitLocation.TryGetValue(du, location) then begin
+        var DprojFile: string;
+        if FDprojFiles.TryGetValue(location + '.dproj', DprojFile) then begin
+          var path := GetUnitDeclaration(DprojFile, du);
+          path := CalcPath(path, DprojFile);
+          TryAddFile(path);
+          continue;
+        end;
       end;
 
+      if SameText(du, 'sttypes') then
+        var a := 1;
+
+      for var Prefix in PriorityPrefix do begin
+        if fPasFiles.TryGetValue(LowerCase(Prefix) + du + '.pas', pas) OR fDcuFiles.TryGetValue(LowerCase(Prefix) + du + '.dcu', pas) then begin
+          TryAddFile(pas, Prefix);
+          break;
+        end;
+      end;
     end;
   end;
 end;
@@ -330,8 +355,14 @@ begin
   for FileName in FoundFiles do
   begin
     Extenshion := ExtractFileExt(FileName);
+
+    if FileName.Contains('STTypes.pas') then begin
+      var ab := ExtractFileName(FileName);
+      var a := 1;
+    end;
+
     if SameText(Extenshion, '.pas') then begin
-      if not fPasFiles.ContainsKey(ExtractFileName(FileName)) then begin
+      if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then begin
         fPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
       end;
 
@@ -340,24 +371,35 @@ begin
         fDcuFiles.Add(ExtractFileName(FileName), FileName);
 
     end else if SameText(Extenshion, '.dproj') then begin
-      if not fDprojFiles.ContainsKey(ExtractFileName(FileName)) then
-        fDprojFiles.Add(ExtractFileName(FileName), FileName);
+      if not fDprojFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then
+        fDprojFiles.Add(LowerCase(ExtractFileName(FileName)), FileName);
     end;
   end;
 end;
 
 {Добавление файлов, синхронизация с основным потоком}
-function TScanThread.TryAddFile(const FilePath: string): Boolean;
+function TScanThread.TryAddFile(const FilePath: string; const Prefix: string = ''): Boolean;
 begin
   result := False;
-  if FileExists(FilePath) AND not FFiles.ContainsKey(ExtractFileName(FilePath)) then begin
+  var name := StringReplace(FilePath, Prefix, '', [rfReplaceAll]);
+  if FileExists(FilePath) AND (not FFiles.ContainsKey(ExtractFileName(name))) then begin
+
+    var NesIndex := NessaseryFiles.IndexOf(ExtractFileNameWithoutExt(FilePath));
+    if NesIndex <> -1 then begin
+      NessaseryFiles.Delete(NesIndex);
+    end;
+
     result := True;
     var index := fUsedFiles.Add(FilePath);
-    FFiles.Add(ExtractFileName(FilePath), index);
+    FFiles.Add(ExtractFileName(name), index);
+    var F := TFile.Create(FilePath);
+    F.Name := LowerCase(ExtractFileName(name));
     // Потокобезопасность
     CS.Enter;
-      List.Add(FilePath);
+      SeedFiles.Add(F);
     CS.Leave;
+
+    UpdatedFiles.Add(F);
   end;
 end;
 
@@ -365,7 +407,7 @@ function TScanThread.TryAddFiles(const Files: array of string): Integer;
 begin
   result := 0;
   for var f in Files do begin
-    if TryAddFile(f) then
+    if TryAddFile(CalcPath(f, SeedFile)) then
       Inc(result);
   end;
 end;
@@ -388,7 +430,7 @@ begin
           case InputRecord.Event.KeyEvent.wVirtualKeyCode of
             VK_ESCAPE: begin
               Writeln('Нажата клавиша Escape.');
-              Finish := True;
+              Step := stFinish;
             end;
           end;
         end;
@@ -402,9 +444,67 @@ end;
 
 { TCopierThread }
 
-constructor TCopyThread.Create(const TargetDir: string);
+{Обновляет ссылки на юниты}
+procedure TCopyThread.UpdateDPR(const FileName: string);
+const
+  DoubleSpace = '  ';
+  IsUsesBlock: Boolean = False;
+var
+  SourseStream: TStreamReader;
+  DestStream: TStringStream;
 begin
-  inherited Create(False);
+  try
+    DestStream := TStringStream.Create;
+    SourseStream := TStreamReader.Create(FileName);
+
+    while not SourseStream.EndOfStream do begin
+      var Line := SourseStream.ReadLine;
+
+      if IsUsesBlock then begin
+        if Line.EndsWith(';') then begin
+          IsUsesBlock := False;
+          for var I := 0 to NessaseryFiles.Count-1 do begin
+            DestStream.WriteString(DoubleSpace + NessaseryFiles[I]);
+
+            if (I = NessaseryFiles.Count) AND (AssociatedFiles.GetCount = 0) then
+              DestStream.WriteString(';' + #13#10)
+            else
+              DestStream.WriteString(',' + #13#10);
+
+          end;
+
+          for var I := 0 to AssociatedFiles.GetCount-1 do begin
+            if AssociatedFiles[I].Path.EndsWith('.pas') then begin
+              var usedUnit := ExtractFilenameNoExt(AssociatedFiles[I].Path) + ' in ' + '''' + GetRelativeLink(FileName, AssociatedFiles[I].Path) + '''';
+              DestStream.WriteString(DoubleSpace + usedUnit);
+
+              if I < AssociatedFiles.GetCount-1 then
+                DestStream.WriteString(',' + #13#10)
+              else
+                DestStream.WriteString(';' + #13#10);
+            end;
+          end;
+        end;
+        continue;
+      end;
+
+      if SameText(Line.Trim, 'uses') then
+        IsUsesBlock := True;
+
+      DestStream.WriteString(Line + #13#10);
+
+    end;
+
+  finally
+    SourseStream.Free;
+    DestStream.SaveToFile(FileName);
+    DestStream.Free;
+  end;
+end;
+
+constructor TCopyThread.Create(CreateSuspended: Boolean; const TargetDir: string);
+begin
+  inherited Create(CreateSuspended);
   FTargetDir := TargetDir
 end;
 
@@ -412,25 +512,33 @@ procedure TCopyThread.Execute;
 begin
   inherited;
 
-  var CommonDir := ExtractCommonPrefix(List); // Общий префикс
+  var CommonDir := ExtractCommonPrefix(SeedFiles); // Общий префикс
   var Name := StringReplace(CommonDir, GetDownPath(ExtractFileDir(CommonDir)), '', [rfReplaceAll, rfIgnoreCase]);  // Название результирующией папки
 
-  for var F in List do begin
-    var LocalPath := StringReplace(F, CommonDir, '', [rfReplaceAll, rfIgnoreCase]); // путь без общего префикса
+  for var I := 0 to UpdatedFiles.GetCount-1 do begin
+    var LocalPath := StringReplace(UpdatedFiles[I].Path, CommonDir, '', [rfReplaceAll, rfIgnoreCase]); // путь без общего префикса
 
     var DestPath := FTargetDir + Name + LocalPath; // результирующее место файла
-    var SourcePath := F;
+    var SourcePath := UpdatedFiles[I].Path;
 
-    AssociatedFiles.Add(DestPath);
-    LastFilesAge := LastFilesAge + [FileAge(DestPath)];
+    if AssociatedFiles.GetByName(UpdatedFiles[I].Name) = nil then begin
 
-    if F.EndsWith('.dproj') then begin
-      DprojFile.ReLinkSearchPathTo(DestPath);
-      continue;
+      var AssociatedFile := TFile.Create(DestPath, UpdatedFiles[I]);
+      AssociatedFiles.Add(AssociatedFile);
+
+      CopyWithDir(SourcePath, DestPath);
     end;
-
-    CopyWithDir(SourcePath, DestPath)
   end;
+
+  // Обновляем uses в dpr
+  var dpr := AssociatedFiles.GetByName(ExtractFileName(SeedFile));
+  self.UpdateDPR(dpr.Path);
+  dpr.Update;
+
+  // Обновляем dproj
+  var dproj := AssociatedFiles.GetByName(ExtractFileNameWithoutExt(SeedFile) + '.dproj');
+  DprojFile.ReLinkSearchPathTo(dproj.path);
+  dproj.Update;
 end;
 
 { Other}
@@ -438,26 +546,65 @@ end;
 procedure Initialize;
 begin
   SearchPath := 'C:\Source\SprutCAM';
-  SeedFile   := 'C:\Source\SprutCAM\NCKernel\NCKernel.dpr';
+  SeedFile   := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dpr';
   TargetPath := 'C:\TestSource';
 
-  CS := TCriticalSection.Create;
-  List := TStringList.Create;
+  SeedFiles := TFileArray.Create;
+  AssociatedFiles := TFileArray.Create;
+  UpdatedFiles := TFileArray.Create;
 
-  AssociatedFiles := TStringList.Create;
+  CS := TCriticalSection.Create;
+
+  NessaseryFiles := TStringList.Create;
 end;
 
 procedure Finalize;
 begin
-
+  FreeAndNil(CS);
 end;
 
 begin
+  // Этап 0: Обратока входных параметров
+  if ParamCount = 3 then begin
+    for var I := 1 to ParamCount do begin
+      case I of
+        1: begin
+          SearchPath := ParamStr(I);
+          if not DirectoryExists(SearchPath) then begin
+            Writeln('Директроии "' + ParamStr(I) + '" не существует');
+            exit;
+          end;
+        end;
+
+        2: begin
+          SeedFile := ParamStr(I);
+          if not FileExists(ParamStr(I)) then begin
+            Writeln('Файла "' + ParamStr(I) + '" не существует');
+            exit;
+          end;
+        end;
+
+        3: begin
+          TargetPath := ParamStr(I);
+        end;
+      end;
+    end;
+  end else begin
+//    Writeln('Неправильное число параметров');
+//    ReadLn;
+//    exit;
+    SearchPath := 'C:\Source\SprutCAM';
+    SeedFile   := 'C:\Source\SprutCAM\NCKernel\NCKernel.dpr';
+    TargetPath := 'C:\TestSource';
+  end;
+
   Initialize;
 
   InputThread := TInputThread.Create(True);
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
+
+  var ScanFile := SeedFile;
 
   while True do begin
 
@@ -465,45 +612,35 @@ begin
       // 1 Этап: Парсинг
       stParsing: begin
 
-        if Finish then begin
-          InputThread.Terminate;
-          ScanThread.Terminate;
-          ScanThread.Free;
-          exit;
-        end;
-
         if ScanThread = nil then begin
-          ScanThread := TScanThread.Create;
+          ScanThread := TScanThread.Create(True, ScanFile);
+          ScanThread.FreeOnTerminate := True;
+          ScanThread.Start;
           Writeln('Начало сканирования.....');
         end;
 
-        while Counter < List.Count do begin
+        while Counter < SeedFiles.GetCount do begin
           // Progress Bar
+          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
           Inc(Counter);
         end;
 
         if ScanThread.Finished then begin
           Step := stCoping;
-          Writeln('Просканировано - ' + List.Count.ToString + ' файлов.');
+          Writeln('Просканировано - ' + SeedFiles.GetCount.ToString + ' файлов.');
           Writeln('Конец сканирования');
-          ScanThread.Terminate;
-          ScanThread.Free;
+          ScanThread := nil;
         end;
 
       end;
 
-      // 2 Этап: копирование
+      // 2 Этап: Копирование
       stCoping: begin
 
-        if Finish then begin
-          InputThread.Terminate;
-          CopyThread.Terminate;
-          CopyThread.Free;
-          exit;
-        end;
-
         if CopyThread = nil then begin
-          CopyThread := TCopyThread.Create(TargetPath);
+          CopyThread := TCopyThread.Create(True, TargetPath);
+          CopyThread.FreeOnTerminate := true;
+          CopyThread.Start;
           Writeln('Начало копирования.....');
         end;
 
@@ -511,6 +648,7 @@ begin
           Step := stUpdate;
           Writeln('Конец копирования');
           Writeln('Начало обновления');
+          CopyThread := nil;
         end;
 
       end;
@@ -518,28 +656,35 @@ begin
       // 3 Этап: Синхронизация
       stUpdate: begin
 
-        if Finish then begin
-          InputThread.Terminate;
-          exit;
-        end;
-
-        for var I := 0 to AssociatedFiles.Count-1 do begin
+        for var I := 0 to AssociatedFiles.GetCount-1 do begin
           var f := AssociatedFiles[I];
-          if FileAge(f) <> LastFilesAge[I] then begin
-            Writeln(ExtractFileName(f) + ' был обнавлен');
-            var Seed := List[I];
+          if F.IsUpdated then begin
+            Writeln(ExtractFileName(f.Path) + ' был обновлен.');
+            var Seed := F.AssociatedFile.Path;
             CopyFile(PChar(F), PChar(Seed), False);
             // Обновить файл исходного проекта
-            LastFilesAge[I] := FileAge(f);
+            F.Update;
           end;
         end;
+      end;
+
+      // 4 Этап: Завершение
+      stFinish: begin
+        if InputThread <> nil then begin
+          InputThread.Terminate;
+        end;
+        if ScanThread <> nil then begin
+          ScanThread.Terminate;
+        end;
+        if CopyThread <> nil then begin
+          CopyThread.Terminate;
+        end;
+
+        BREAK;
       end;
     end;
   end;
 
-  InputThread.Free;
-  ScanThread.Free;
-  CopyThread.Free;
-
+  Finalize;
 end.
 
