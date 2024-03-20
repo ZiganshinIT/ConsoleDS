@@ -43,6 +43,9 @@ uses
   // Dproj opertaion
   function GetUnitDeclaration(const DprojPath, UnitName: string): string;
 
+  // Compare operation
+  function IsSimilarity(const str1, str2: string): Boolean;
+
 implementation
 
 { Dialogs }
@@ -346,5 +349,23 @@ begin
   finally
   end;
 end;
+
+// Compare operation
+function IsSimilarity(const str1, str2: string): Boolean;
+begin
+  var stdWords := str1.Split(['.']);
+  var duWords := str2.Split(['.']);
+
+  var count := 0;
+  for var stdword in stdWords do begin
+    for var duWord in duWords do begin
+      if SameText(stdWord, duWord) then
+        Inc(count);
+    end;
+  end;
+
+  if count > 0 then
+    result := True;
+  end;
 
 end.

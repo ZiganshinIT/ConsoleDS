@@ -117,7 +117,7 @@ function TDprojInfo.GetDebuggerFiles(const PlatformTyp: TPlatformEnum;
       FoundFiles := TDirectory.GetFiles(Dir, '*.*', TSearchOption.soAllDirectories);
       for FileName in FoundFiles do begin
         var name := ExtractFileNameWithoutExt(FileName);
-        if IsContain(name, result) then
+        if not IsContain(name, result) then
           result := result + [name];
       end;
     end;
@@ -126,8 +126,8 @@ function TDprojInfo.GetDebuggerFiles(const PlatformTyp: TPlatformEnum;
 begin
   var debuggerPaths := self.ConfigSettings[PlatformTyp][ConfigTyp][DebuggerSourcePath];
   var PathArr := debuggerPaths.Split([';']);
-  for var path in PathArr do begin
-    result := result + ParseFiles(path);
+  for var I := 0 to Length(PathArr)-2 do begin
+    result := result + ParseFiles(CalcPath(PathArr[I], FFilePath));
   end;
 end;
 

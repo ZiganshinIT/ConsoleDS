@@ -2,6 +2,7 @@
 
 {$APPTYPE CONSOLE}
 
+{$R Resources/DSres.RES}
 {$R *.res}
 
 uses
@@ -54,12 +55,12 @@ type
     FUnitLocation: TDictionary<string, string>;
 
     FUsedFiles:   TStringList;
-    FIgnoreFiles: TStringList;
 
     FPascalUnitExtractor: TPascalUnitExtractor;
   protected
     procedure Execute;                                                          override;
 
+    procedure FindFilesInDPR(const Path: string);
     procedure FindFilesInFolder(const Folder: string);
 
     procedure AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
@@ -105,6 +106,7 @@ var
 
   // Файлы без пути
   NessaseryFiles: TStringList;
+  IgnoreFiles: TStringList;
 
   CS: TCriticalSection;
 
@@ -171,8 +173,8 @@ end;
 {Формирует массив файлов которые нужно проигнорировать}
 procedure TScanThread.AddIgnoreFile(const F: string);
 begin
-  if FIgnoreFiles.IndexOf(ExtractFileNameWithoutExt(F)) = -1 then begin
-    FIgnoreFiles.Add(ExtractFileNameWithoutExt(F));
+  if IgnoreFiles.IndexOf(ExtractFileNameWithoutExt(F)) = -1 then begin
+    IgnoreFiles.Add(ExtractFileNameWithoutExt(F));
   end;
 end;
 
@@ -200,7 +202,6 @@ begin
   FDprojFiles   :=   TDictionary<string, string>.Create;
   FFiles        :=   TDictionary<string, integer>.Create;
   FUsedFiles    :=   TStringList.Create;
-  FIgnoreFiles  :=   TStringList.Create;
   FUnitLocation :=   TDictionary<string, string>.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
 end;
@@ -214,7 +215,6 @@ begin
   FreeAndNil(fDprojFiles);
   FreeAndNil(FFiles);
   FreeAndNil(fUsedFiles);
-  FreeAndNil(FIgnoreFiles);
   FreeAndNil(fUnitLocation);
   FreeAndNil(FPascalUnitExtractor);
 end;
@@ -270,20 +270,42 @@ begin
         exit;
 
       {Пропуск файлов без пути распложения}
-      if (UnitPath.EndsWith('.dpr')) AND (un.InFilePosition = 0) then begin
-        NessaseryFiles.Add(un.DelphiUnitName);
-        continue;
-      end;
+//      if (UnitPath.EndsWith('.dpr')) AND (un.InFilePosition = 0) then begin
+////        NessaseryFiles.Add(un.DelphiUnitName);
+//        continue;
+//      end;
 
       var du := LowerCase(un.DelphiUnitName);
 
-      {Нужно ли проигнорировать?}
-      if FIgnoreFiles.IndexOf(du) <> -1 then
+//      if SameText(du, 'STDimensionTypes') then
+//        var a := 1;
+
+      if NessaseryFiles.IndexOf(ExtractFileNameWithoutExt(UnitPath)) <> -1 then begin
+        NessaseryFiles.Add(du);
         continue;
+      end;
+
+      {Нужно ли проигнорировать?}
+      if IgnoreFiles.IndexOf(du) <> -1 then
+        continue;
+
+//      var IsBreak: Boolean := False;
+//      for var ignoreFile in IgnoreFiles do begin
+//        if IsSimilarity(du, ignoreFile) then begin
+//          IsBreak := True;
+//          break;
+//        end;
+//      end;
+//
+//      if IsBreak then
+//        continue;
+
+      if SameText(du, 'STDimensionTypes') then
+        var a := 1;
 
       {Ищем объявление юнита}
       var location: string;
-      if FUnitLocation.TryGetValue(du, location) then begin
+      if FUnitLocation.TryGetValue(ExtractFileNameWithoutExt(UnitPath), location) then begin
         var DprojFile: string;
         if FDprojFiles.TryGetValue(location + '.dproj', DprojFile) then begin
           var path := GetUnitDeclaration(DprojFile, du);
@@ -292,9 +314,6 @@ begin
           continue;
         end;
       end;
-
-      if SameText(du, 'sttypes') then
-        var a := 1;
 
       for var Prefix in PriorityPrefix do begin
         if fPasFiles.TryGetValue(LowerCase(Prefix) + du + '.pas', pas) OR fDcuFiles.TryGetValue(LowerCase(Prefix) + du + '.dcu', pas) then begin
@@ -334,7 +353,13 @@ begin
     TryAddFileWithExt(SeedFile, '._icon.ico');
   end;
 
-  FindFilesInFolder(SearchPath);
+  // Добавляем юниты
+  FindFilesInDPR(SeedFile);
+  var currrentFolder := GetDownPath(SeedFile);
+  while not SameText(currrentFolder, GetDownPath(SearchPath)) do begin
+    FindFilesInFolder(currrentFolder);
+    currrentFolder := GetDownPath(currrentFolder);
+  end;
 
   var i := 0;
   while i<fUsedFiles.Count do begin
@@ -342,6 +367,22 @@ begin
       exit;
     DoScan(fUsedFiles[i]);
     inc(i);
+  end;
+end;
+
+procedure TScanThread.FindFilesInDPR(const Path: string);
+var
+  UnitInfo: IUnitInfo;
+begin
+  var Scaned := FPascalUnitExtractor.GetUsedUnits(Path, UnitInfo);
+  if Scaned then begin
+    for var unt in UnitInfo.UsedUnits do begin
+      if Terminated then begin
+        Exit;
+      end;
+      if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(unt.Filename))) then
+        fPasFiles.Add(LowerCase(ExtractFileName(unt.FileName)), unt.FileName);
+    end;
   end;
 end;
 
@@ -355,11 +396,6 @@ begin
   for FileName in FoundFiles do
   begin
     Extenshion := ExtractFileExt(FileName);
-
-    if FileName.Contains('STTypes.pas') then begin
-      var ab := ExtractFileName(FileName);
-      var a := 1;
-    end;
 
     if SameText(Extenshion, '.pas') then begin
       if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then begin
@@ -556,11 +592,29 @@ begin
   CS := TCriticalSection.Create;
 
   NessaseryFiles := TStringList.Create;
+  IgnoreFiles := TStringList.Create;
+end;
+
+procedure LoadResources;
+var
+  RS: TResourceStream;
+begin
+  try
+    RS := TResourceStream.Create(HInstance, 'LIB', RT_RCDATA);
+    IgnoreFiles.LoadFromStream(RS);
+  finally
+    RS.Free;
+  end;
 end;
 
 procedure Finalize;
 begin
   FreeAndNil(CS);
+  FreeAndNil(NessaseryFiles);
+  FreeAndNil(IgnoreFiles);
+  FreeAndNil(SeedFiles);
+  FreeAndNil(AssociatedFiles);
+  FreeAndNil(UpdatedFiles);
 end;
 
 begin
@@ -599,6 +653,7 @@ begin
   end;
 
   Initialize;
+  LoadResources;
 
   InputThread := TInputThread.Create(True);
   InputThread.FreeOnTerminate := True;
@@ -621,7 +676,7 @@ begin
 
         while Counter < SeedFiles.GetCount do begin
           // Progress Bar
-          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
+//          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
           Inc(Counter);
         end;
 
