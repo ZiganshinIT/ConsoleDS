@@ -56,6 +56,8 @@ type
 
     FUsedFiles:   TStringList;
 
+    FDprFiles: TDictionary<string, string>;
+
     FPascalUnitExtractor: TPascalUnitExtractor;
   protected
     procedure Execute;                                                          override;
@@ -72,6 +74,8 @@ type
     procedure DoScan(const FilePath: string);
     procedure DoScanUnit(const UnitPath: string);
     procedure DoScanRCFiles(const RCFilePath: string);
+
+    procedure DoParseAllDPR;
 
     {Unit Location}
     procedure AddFileLocation(const F: string);
@@ -99,10 +103,12 @@ var
   SearchPath: string;
   SeedFile: string;
   TargetPath: string;
+  ProjGroupFile: string;
 
   SeedFiles: TFileArray;
   AssociatedFiles: TFileArray;
   UpdatedFiles: TFileArray;
+
 
   // Файлы без пути
   NessaseryFiles: TStringList;
@@ -120,11 +126,12 @@ var
   // DprojFile:
   DprojFile: TDprojInfo;
 
+  // GroupProj
+  UsedProject: TStringList;
+
 const
-  PriorityPrefix: array of string = ['IDL.SprutCAMTech.', ''];
   Step: TStep = stParsing;
   Counter: Integer = 0;
-
 
 { TScanThread }
 
@@ -202,6 +209,7 @@ begin
   FDprojFiles   :=   TDictionary<string, string>.Create;
   FFiles        :=   TDictionary<string, integer>.Create;
   FUsedFiles    :=   TStringList.Create;
+  FDprFiles     :=   TDictionary<string, string>.Create;
   FUnitLocation :=   TDictionary<string, string>.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
 end;
@@ -215,8 +223,37 @@ begin
   FreeAndNil(fDprojFiles);
   FreeAndNil(FFiles);
   FreeAndNil(fUsedFiles);
+  FreeAndNil(FDprFiles);
   FreeAndNil(fUnitLocation);
   FreeAndNil(FPascalUnitExtractor);
+end;
+
+
+procedure TScanThread.DoParseAllDPR;
+var
+  FoundFiles: TStringDynArray;
+//  FileName: string;
+  Extenshion: string;
+begin
+if DirectoryExists(SearchPath) then begin
+    FoundFiles := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
+    for var I := Length(FoundFiles)-1 downto 0 do
+    begin
+      if SameText('VirtualTreesR', ExtractFileNameWithoutExt(FoundFiles[I])) then
+        var a := 1;
+      Extenshion := LowerCase(ExtractFileExt(FoundFiles[I]));
+      if SameText(Extenshion, '.dpr') OR SameText(Extenshion, '.dpk') then begin
+        if not FDprFiles.ContainsKey(LowerCase(ExtractFileNameWithoutExt(FoundFiles[I]))) then begin
+          for var P in UsedProject do begin
+            if SameText(ExtractFilePath(P), ExtractFilePath(FoundFiles[I])) then begin
+              fDprFiles.Add(LowerCase(ExtractFileNameWithoutExt(FoundFiles[I])), FoundFiles[I]);
+              break;
+            end;
+          end;
+        end;
+      end;
+    end;
+  end;
 end;
 
 {Анализ сканируемого файла}
@@ -269,58 +306,19 @@ begin
       if self.Terminated then
         exit;
 
-      {Пропуск файлов без пути распложения}
-//      if (UnitPath.EndsWith('.dpr')) AND (un.InFilePosition = 0) then begin
-////        NessaseryFiles.Add(un.DelphiUnitName);
-//        continue;
-//      end;
-
       var du := LowerCase(un.DelphiUnitName);
 
-//      if SameText(du, 'STDimensionTypes') then
-//        var a := 1;
+      if SameText(du, 'SynUnicode') then
+        var a := 1;
 
-      if NessaseryFiles.IndexOf(ExtractFileNameWithoutExt(UnitPath)) <> -1 then begin
-        NessaseryFiles.Add(du);
-        continue;
-      end;
 
       {Нужно ли проигнорировать?}
       if IgnoreFiles.IndexOf(du) <> -1 then
         continue;
 
-//      var IsBreak: Boolean := False;
-//      for var ignoreFile in IgnoreFiles do begin
-//        if IsSimilarity(du, ignoreFile) then begin
-//          IsBreak := True;
-//          break;
-//        end;
-//      end;
-//
-//      if IsBreak then
-//        continue;
-
-      if SameText(du, 'STDimensionTypes') then
-        var a := 1;
-
-      {Ищем объявление юнита}
-      var location: string;
-      if FUnitLocation.TryGetValue(ExtractFileNameWithoutExt(UnitPath), location) then begin
-        var DprojFile: string;
-        if FDprojFiles.TryGetValue(location + '.dproj', DprojFile) then begin
-          var path := GetUnitDeclaration(DprojFile, du);
-          path := CalcPath(path, DprojFile);
-          TryAddFile(path);
-          continue;
+        if fPasFiles.TryGetValue(du + '.pas', pas) OR fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
+          TryAddFile(pas);
         end;
-      end;
-
-      for var Prefix in PriorityPrefix do begin
-        if fPasFiles.TryGetValue(LowerCase(Prefix) + du + '.pas', pas) OR fDcuFiles.TryGetValue(LowerCase(Prefix) + du + '.dcu', pas) then begin
-          TryAddFile(pas, Prefix);
-          break;
-        end;
-      end;
     end;
   end;
 end;
@@ -350,15 +348,25 @@ begin
       AddIgnoreFiles(DprojFile.GetDebuggerFiles(Win64, Cfg_2));
 
     end;
-    TryAddFileWithExt(SeedFile, '._icon.ico');
+    TryAddFileWithExt(SeedFile, '_icon.ico');
   end;
+
+  UsedProject := ParseUsedProject(ProjGroupFile);
+
+  // парсим все dpr файлы
+  self.DoParseAllDPR;
+
 
   // Добавляем юниты
   FindFilesInDPR(SeedFile);
-  var currrentFolder := GetDownPath(SeedFile);
-  while not SameText(currrentFolder, GetDownPath(SearchPath)) do begin
-    FindFilesInFolder(currrentFolder);
-    currrentFolder := GetDownPath(currrentFolder);
+  if DprojFile <> nil then begin
+    for var sp in DprojFile.GetSearchPath([All], [Base]) do begin
+      var pathParts := sp.Split(['\']);
+      var dprName := pathParts[Length(pathParts)-1];
+      var path: string;
+      if FDprFiles.TryGetValue(LowerCase(dprName), path) then
+        FindFilesInDPR(path);
+    end;
   end;
 
   var i := 0;
@@ -372,17 +380,54 @@ end;
 
 procedure TScanThread.FindFilesInDPR(const Path: string);
 var
-  UnitInfo: IUnitInfo;
+  Reader: TStringList;
+  Line: string;
+  FindBlock: string;
 begin
-  var Scaned := FPascalUnitExtractor.GetUsedUnits(Path, UnitInfo);
-  if Scaned then begin
-    for var unt in UnitInfo.UsedUnits do begin
-      if Terminated then begin
-        Exit;
+  try
+    if SameText(ExtractFileNameWithoutExt(Path), 'SynEdit_R') then
+      var a := 1;
+
+    Reader := TStringList.Create;
+    Reader.LoadFromFile(Path);
+
+    var Extension := ExtractFileExt(Path);
+    if SameText(Extension, '.dpr') then
+      FindBlock := 'uses'
+    else if SameText(Extension, '.dpk') then
+      FindBlock := 'contains';
+
+
+    var Counter := 0;
+    while Counter < Reader.Count-1 do begin
+      Line := Reader.Strings[Counter];
+
+      if SameText(Line, FindBlock) then begin
+        Inc(Counter);
+        while (not Line.EndsWith(';')) do begin
+          Line := Reader.Strings[Counter].Trim;
+          var Words := Line.Split([' ']);
+          case Length(Words) of
+            1: begin
+
+            end;
+            3, 4: begin
+
+
+              if not FPasFiles.ContainsKey(LowerCase(Words[0] + '.pas')) then begin
+                var PasPath := Words[2].Trim([' ', '''', '"', ',', ';']);
+                PasPath := CalcPath(PasPath, path);
+                FPasFiles.Add(LowerCase(Words[0] + '.pas'), PasPath);
+              end;
+            end;
+          end;
+          Inc(Counter);
+        end;
       end;
-      if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(unt.Filename))) then
-        fPasFiles.Add(LowerCase(ExtractFileName(unt.FileName)), unt.FileName);
+      Inc(Counter);
     end;
+  finally
+    FreeAndNil(Reader);
   end;
 end;
 
@@ -392,23 +437,25 @@ var
   FileName: string;
   Extenshion: string;
 begin
-  FoundFiles := TDirectory.GetFiles(Folder, '*.*', TSearchOption.soAllDirectories);
-  for FileName in FoundFiles do
-  begin
-    Extenshion := ExtractFileExt(FileName);
+  if DirectoryExists(Folder) then begin
+    FoundFiles := TDirectory.GetFiles(Folder, '*.*', TSearchOption.soAllDirectories);
+    for FileName in FoundFiles do
+    begin
+      Extenshion := ExtractFileExt(FileName);
 
-    if SameText(Extenshion, '.pas') then begin
-      if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then begin
-        fPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+      if SameText(Extenshion, '.pas') then begin
+        if not fPasFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then begin
+          fPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+        end;
+
+      end else if SameText(Extenshion, '.dcu') then begin
+        if not fDcuFiles.ContainsKey(ExtractFileName(FileName)) then
+          fDcuFiles.Add(ExtractFileName(FileName), FileName);
+
+      end else if SameText(Extenshion, '.dproj') then begin
+        if not fDprojFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then
+          fDprojFiles.Add(LowerCase(ExtractFileName(FileName)), FileName);
       end;
-
-    end else if SameText(Extenshion, '.dcu') then begin
-      if not fDcuFiles.ContainsKey(ExtractFileName(FileName)) then
-        fDcuFiles.Add(ExtractFileName(FileName), FileName);
-
-    end else if SameText(Extenshion, '.dproj') then begin
-      if not fDprojFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then
-        fDprojFiles.Add(LowerCase(ExtractFileName(FileName)), FileName);
     end;
   end;
 end;
@@ -584,6 +631,7 @@ begin
   SearchPath := 'C:\Source\SprutCAM';
   SeedFile   := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dpr';
   TargetPath := 'C:\TestSource';
+  ProjGroupFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
 
   SeedFiles := TFileArray.Create;
   AssociatedFiles := TFileArray.Create;
@@ -593,6 +641,8 @@ begin
 
   NessaseryFiles := TStringList.Create;
   IgnoreFiles := TStringList.Create;
+
+  UsedProject := TStringList.Create;
 end;
 
 procedure LoadResources;
@@ -615,6 +665,7 @@ begin
   FreeAndNil(SeedFiles);
   FreeAndNil(AssociatedFiles);
   FreeAndNil(UpdatedFiles);
+  FreeAndNil(UsedProject);
 end;
 
 begin
@@ -676,7 +727,7 @@ begin
 
         while Counter < SeedFiles.GetCount do begin
           // Progress Bar
-//          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
+          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
           Inc(Counter);
         end;
 

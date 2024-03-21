@@ -8,7 +8,7 @@ uses
   Vcl.Dialogs, Vcl.StdCtrls,
 
   System.SysUtils, System.StrUtils, System.Math, System.Classes, System.IOUtils,
-  System.Types,
+  System.Types, System.Generics.Collections,
 
   DSTypes,
 
@@ -45,6 +45,9 @@ uses
 
   // Compare operation
   function IsSimilarity(const str1, str2: string): Boolean;
+
+  // GroupProj file operation
+  function ParseUsedProject(const GroupProjFile: string): TStringList;
 
 implementation
 
@@ -347,6 +350,7 @@ begin
       end;
     end;
   finally
+    XMLDoc := nil;
   end;
 end;
 
@@ -367,5 +371,35 @@ begin
   if count > 0 then
     result := True;
   end;
+
+// GroupProj file operation
+function ParseUsedProject(const GroupProjFile: string): TStringList;
+var
+  XMLDoc: IXMLDocument;
+  RootNode, ItemGroupNode: IXMLNode;
+begin
+  result := TStringList.Create;
+  try
+    XMLDoc := TXMLDocument.Create(nil);
+    XMLDoc.LoadFromFile(GroupProjFile);
+
+    RootNode := XMLDoc.DocumentElement;
+
+    ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
+    if Assigned(ItemGroupNode) then begin
+      for var I := 0 to ItemGroupNode.ChildNodes.Count-1 do begin
+        var node := ItemGroupNode.ChildNodes.Get(I);
+        if node.LocalName = 'Projects' then begin
+          var path := node.Attributes['Include'];
+          result.Add(LowerCase(CalcPath(path, GroupProjFile)));
+        end
+      end;
+    end;
+
+  finally
+    XMLDoc := nil;
+  end;
+
+end;
 
 end.
