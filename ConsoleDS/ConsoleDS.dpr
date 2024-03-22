@@ -43,41 +43,44 @@ type
     procedure Execute; override;
   end;
 
-  TScanThread = class(TThread)
+  TScanner = class
   private
     FPasFiles:   TDictionary<string, string>;
-    FDcuFiles:   TDictionary<string, string>;
-    FDprFiles:   TDictionary<string, string>;
+    FDprojFiles: TDictionary<string, string>;
     FFiles:      TDictionary<string, integer>;
-
-    FUsedFiles:   TStringList;
-
+    FUsedFiles:  TStringList;
+    FIgnoreFiles: TStringList;
     FPascalUnitExtractor: TPascalUnitExtractor;
   protected
-    procedure Execute;                                                          override;
+    procedure StartScan;
+    procedure FindFilesFromProject(const ProjectPath: string);
 
-    procedure FindFilesInDPR(const Path: string);
-
+    {Add Files Operations}
+    procedure AddFile(const FilePath: string);
+    procedure AddFiles(const Files: array of string);
     procedure AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
 
-    function TryAddFileWithExt(const filename, ext: string): Boolean;
-    function TryAddFile(const FilePath: string; const Prefix: string = ''): Boolean;
-    function TryAddFiles(const Files: array of string): Integer;
+    {Add Ignore Files Operations}
+    procedure AddIgnoreFile(const F: string);
+    procedure AddIgnoreFiles(const Files: array of string);
+    procedure AddIngoreFilesFromResource;
 
+    {Scan Operations}
     procedure DoScan(const FilePath: string);
     procedure DoScanUnit(const UnitPath: string);
     procedure DoScanRCFiles(const RCFilePath: string);
 
-    procedure DoParseAllDPR;
-
-    {Ignore Files}
-    procedure AddIgnoreFile(const F: string);
-    procedure AddIgnoreFiles(const Files: array of string);
   public
-    constructor Create(CreateSuspended: Boolean; const ScanFile: string = ''); overload;
-    destructor Destroy; overload;
+    constructor Create;
+
+    procedure LoadSettings(const DprojFile: TDprojFile);
+    procedure Scan(const Dprojfile: TDprojFile);                                overload;
+    procedure Scan(const Files: array of string);                               overload;
+
+    destructor Destroy;
   end;
 
+  // Syncronizer
   TCopyThread = class(TThread)
   private
     FTargetDir: string;
@@ -98,22 +101,11 @@ var
   AssociatedFiles: TFileArray;
   UpdatedFiles: TFileArray;
 
-  IgnoreFiles: TStringList;
-
-  CS: TCriticalSection;
-
   UpdateItem: array of string;
 
   // Threads
   InputThread: TInputThread;
-  ScanThread: TScanThread;
   CopyThread: TCopyThread;
-
-  // DprojFile:
-  DprojFile: TDprojInfo;
-
-  // GroupProj
-  UsedProject: TStringList;
 
   //
   UndetectedUnits: TStringList;
@@ -121,284 +113,6 @@ var
 const
   Step: TStep = stParsing;
   Counter: Integer = 0;
-
-{ TScanThread }
-
-{Добавляет файл с заданным расширением расширение}
-function TScanThread.TryAddFileWithExt(const filename, ext: string): Boolean;
-begin
-  var fn := ExtractFilePath(filename)+ExtractFileNameWithoutExt(filename)+ext;
-  result := TryAddFile(fn);
-end;
-
-{Формирует массив файлов которые нужно проигнорировать}
-procedure TScanThread.AddIgnoreFiles(const Files: array of string);
-begin
-  for var f in Files do begin
-    AddIgnoreFile(f);
-  end;
-end;
-
-{Формирует массив файлов которые нужно проигнорировать}
-procedure TScanThread.AddIgnoreFile(const F: string);
-begin
-  if IgnoreFiles.IndexOf(ExtractFileNameWithoutExt(F)) = -1 then begin
-    IgnoreFiles.Add(ExtractFileNameWithoutExt(F));
-  end;
-end;
-
-{Добавляет дополнительные файлы, использующиеся в юните}
-procedure TScanThread.AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
-begin
-  for var ValuesArr in UnitInfo.OtherUsedItems.Values do begin
-    for var Value in ValuesArr do begin
-      var path := CalcPath(Value, UnitPath);
-      TryAddFile(path);
-    end;
-  end;
-end;
-
-constructor TScanThread.Create(CreateSuspended: Boolean; const ScanFile: string = '');
-begin
-  inherited Create(CreateSuspended);
-  FPasFiles     :=   TDictionary<string, string>.Create;
-  FDcuFiles     :=   TDictionary<string, string>.Create;
-  FDprFiles     :=   TDictionary<string, string>.Create;
-  FFiles        :=   TDictionary<string, integer>.Create;
-  FUsedFiles    :=   TStringList.Create;
-  FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
-end;
-
-destructor TScanThread.Destroy;
-begin
-  inherited;
-  FreeAndNil(fPasFiles);
-  FreeAndNil(fDcuFiles);
-  FreeAndNil(FDprFiles);
-  FreeAndNil(FFiles);
-  FreeAndNil(fUsedFiles);
-  FreeAndNil(FPascalUnitExtractor);
-end;
-
-{Ищем все dpr используемые в проекте}
-procedure TScanThread.DoParseAllDPR;
-var
-  FoundFiles: TStringDynArray;
-  Extenshion: string;
-begin
-if DirectoryExists(SearchPath) then begin
-    FoundFiles := TDirectory.GetFiles(SearchPath, '*.*', TSearchOption.soAllDirectories);
-    for var I := Length(FoundFiles)-1 downto 0 do
-    begin
-      Extenshion := LowerCase(ExtractFileExt(FoundFiles[I]));
-      if SameText(Extenshion, '.dpr') OR SameText(Extenshion, '.dpk') then begin
-        if not FDprFiles.ContainsKey(LowerCase(ExtractFileNameWithoutExt(FoundFiles[I]))) then begin
-          for var P in UsedProject do begin
-            if SameText(ExtractFilePath(P), ExtractFilePath(FoundFiles[I])) then begin
-              fDprFiles.Add(LowerCase(ExtractFileNameWithoutExt(FoundFiles[I])), FoundFiles[I]);
-              break;
-            end;
-          end;
-        end;
-      end;
-    end;
-  end;
-end;
-
-{Анализ сканируемого файла}
-procedure TScanThread.DoScan(const FilePath: string);
-var
-  UnitInfo: IUnitInfo;
-begin
-  if self.Terminated then
-    exit;
-  var Extension := LowerCase(ExtractFileExt(FilePath));
-  if SameText(Extension, '.pas') OR SameText(Extension, '.dpr') then begin
-    self.DoScanUnit(FilePath);
-  end else if SameText(Extension, '.rc') then begin
-    self.DoScanRCFiles(FilePath);
-  end;
-end;
-
-{Сканирует файлы ресурсов}
-procedure TScanThread.DoScanRCFiles(const RCFilePath: string);
-begin
-  if FileExists(RCFilePath) then begin
-    var files := ReadRCFile(RCFilePath);
-    for var f in files do begin
-      if self.Terminated then
-        exit;
-      var InnerFilePath := CalcPath(f, RCFilePath);
-      TryAddFile(InnerFilePath)
-    end;
-  end else
-    raise Exception.Create(RCFilePath + ' не существует')
-end;
-
-{Добавдение файлов Delphi}
-procedure TScanThread.DoScanUnit(const UnitPath: string);
-var
-  UnitInfo: IUnitInfo;
-  Parsed: Boolean;
-  pas: string;
-begin
-  Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
-  if Parsed then begin
-    if self.Terminated then
-      exit;
-
-    if UnitInfo.OtherUsedItems.Count > 0 then begin
-      AddOtherFiles(UnitPath, UnitInfo);
-    end;
-
-    for var un in UnitInfo.UsedUnits do begin
-      if self.Terminated then
-        exit;
-
-      var du := LowerCase(un.DelphiUnitName);
-
-      {Нужно ли проигнорировать?}
-      if (IgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
-        continue;
-
-        if fPasFiles.TryGetValue(du + '.pas', pas) OR fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
-          TryAddFile(pas);
-        end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
-          UndetectedUnits.Add(du);
-        end;
-    end;
-  end;
-end;
-
-procedure TScanThread.Execute;
-begin
-  inherited;
-  TryAddFile(SeedFile);
-
-  if SameText(ExtractFileExt(SeedFile), '.dpr') then begin
-    if TryAddFileWithExt(SeedFile, '.dproj') then begin
-      var dprojPath := StringReplace(SeedFile, '.dpr', '.dproj', [rfReplaceAll, rfIgnoreCase]);
-      DprojFile := TDprojInfo.Create(dprojPath);
-      TryAddFiles(DprojFile.Resources); // Добавляет ресурсы проекта
-
-      { Добавляет доступные define проекта }
-      with FPascalUnitExtractor do begin
-        DefineAnalizator.EnableDefines := DprojFile.GetDefinies([All, Win64], [Base, Cfg_2]);
-      end;
-
-      {Формируем массив файлов, которые нужно проигнорировать}
-      AddIgnoreFile('SVG2Png');
-      AddIgnoreFiles(DprojFile.GetDebuggerFiles(Win64, Cfg_2));
-
-    end;
-    TryAddFileWithExt(SeedFile, '_icon.ico');
-  end;
-
-  UsedProject := ParseUsedProject(ProjGroupFile);
-
-  // парсим все dpr файлы
-  self.DoParseAllDPR;
-
-  // Добавляем юниты
-  FindFilesInDPR(SeedFile);
-  if DprojFile <> nil then begin
-    for var sp in DprojFile.GetSearchPath([All], [Base]) do begin
-      var pathParts := sp.Split(['\']);
-      var dprName := pathParts[Length(pathParts)-1];
-      var path: string;
-      if FDprFiles.TryGetValue(LowerCase(dprName), path) then
-        FindFilesInDPR(path);
-    end;
-  end;
-
-  var i := 0;
-  while i<fUsedFiles.Count do begin
-    if self.Terminated then
-      exit;
-    DoScan(fUsedFiles[i]);
-    inc(i);
-  end;
-end;
-
-{Добавляем пути которые были объявлены в dpr}
-procedure TScanThread.FindFilesInDPR(const Path: string);
-var
-  Reader: TStringList;
-  Line: string;
-  FindBlock: string;
-begin
-  try
-
-    Reader := TStringList.Create;
-    Reader.LoadFromFile(Path);
-
-    var Extension := ExtractFileExt(Path);
-    if SameText(Extension, '.dpr') then
-      FindBlock := 'uses'
-    else if SameText(Extension, '.dpk') then
-      FindBlock := 'contains';
-
-
-    var Counter := 0;
-    while Counter < Reader.Count-1 do begin
-      Line := Reader.Strings[Counter];
-
-      if SameText(Line, FindBlock) then begin
-        Inc(Counter);
-        while (not Line.EndsWith(';')) do begin
-          Line := Reader.Strings[Counter].Trim;
-          var Words := Line.Split([' ']);
-          case Length(Words) of
-            1: begin
-
-            end;
-            3, 4: begin
-              if not FPasFiles.ContainsKey(LowerCase(Words[0] + '.pas')) then begin
-                var PasPath := Words[2].Trim([' ', '''', '"', ',', ';']);
-                PasPath := CalcPath(PasPath, path);
-                FPasFiles.Add(LowerCase(Words[0] + '.pas'), PasPath);
-              end;
-            end;
-          end;
-          Inc(Counter);
-        end;
-      end;
-      Inc(Counter);
-    end;
-  finally
-    FreeAndNil(Reader);
-  end;
-end;
-
-{Добавление файлов, синхронизация с основным потоком}
-function TScanThread.TryAddFile(const FilePath: string; const Prefix: string = ''): Boolean;
-begin
-  result := False;
-  var name := StringReplace(FilePath, Prefix, '', [rfReplaceAll]);
-  if FileExists(FilePath) AND (not FFiles.ContainsKey(ExtractFileName(name))) then begin
-
-    result := True;
-    var index := fUsedFiles.Add(FilePath);
-    FFiles.Add(ExtractFileName(name), index);
-    var F := TFile.Create(FilePath);
-    F.Name := LowerCase(ExtractFileName(name));
-    // Потокобезопасность
-    CS.Enter;
-      SeedFiles.Add(F);
-    CS.Leave;
-
-    UpdatedFiles.Add(F);
-  end;
-end;
-
-function TScanThread.TryAddFiles(const Files: array of string): Integer;
-begin
-  result := 0;
-  for var f in Files do begin
-    if TryAddFile(CalcPath(f, SeedFile)) then
-      Inc(result);
-  end;
-end;
 
 { TInputThread }
 
@@ -525,7 +239,7 @@ begin
 
   // Обновляем dproj
   var dproj := AssociatedFiles.GetByName(ExtractFileNameWithoutExt(SeedFile) + '.dproj');
-  DprojFile.ReLinkSearchPathTo(dproj.path);
+//  DprojFile.ReLinkSearchPathTo(dproj.path);
   dproj.Update;
 end;
 
@@ -534,7 +248,7 @@ end;
 procedure Initialize;
 begin
   SearchPath := 'C:\Source\SprutCAM';
-  SeedFile   := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dpr';
+  SeedFile   := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dproj';
   TargetPath := 'C:\TestSource';
   ProjGroupFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
 
@@ -542,36 +256,267 @@ begin
   AssociatedFiles := TFileArray.Create;
   UpdatedFiles := TFileArray.Create;
 
-  CS := TCriticalSection.Create;
-
-  IgnoreFiles := TStringList.Create;
-
-  UsedProject := TStringList.Create;
-
   UndetectedUnits := TStringList.Create;
 end;
 
-procedure LoadResources;
+procedure Finalize;
+begin
+  FreeAndNil(SeedFiles);
+  FreeAndNil(AssociatedFiles);
+  FreeAndNil(UpdatedFiles);
+  FreeAndNil(UndetectedUnits);
+end;
+
+{ TScanner }
+
+procedure TScanner.AddFile(const FilePath: string);
+begin
+  if FileExists(FilePath) AND (not FFiles.ContainsKey(ExtractFileName(FilePath))) then begin
+    var index := fUsedFiles.Add(FilePath);
+    FFiles.Add(ExtractFileName(FilePath), index);
+    var F := TFile.Create(FilePath);
+    F.Name := LowerCase(ExtractFileName(FilePath));
+    SeedFiles.Add(F);
+    UpdatedFiles.Add(F);
+
+    // Debug
+    Writeln(index.ToString + ' -- ' + F.Path);
+  end;
+end;
+
+procedure TScanner.AddFiles(const Files: array of string);
+begin
+  for var F in Files do begin
+    AddFile(F);
+  end;
+end;
+
+procedure TScanner.AddIgnoreFile(const F: string);
+begin
+  if FIgnoreFiles.IndexOf(ExtractFileNameWithoutExt(F)) = -1 then begin
+    FIgnoreFiles.Add(ExtractFileNameWithoutExt(F));
+  end;
+end;
+
+procedure TScanner.AddIgnoreFiles(const Files: array of string);
+begin
+  for var F in Files do begin
+    AddIgnoreFile(F);
+  end;
+end;
+
+procedure TScanner.AddIngoreFilesFromResource;
 var
   RS: TResourceStream;
 begin
   try
     RS := TResourceStream.Create(HInstance, 'LIB', RT_RCDATA);
-    IgnoreFiles.LoadFromStream(RS);
+    fIgnoreFiles.LoadFromStream(RS);
   finally
     RS.Free;
   end;
 end;
 
-procedure Finalize;
+procedure TScanner.AddOtherFiles(const UnitPath: string; var UnitInfo: IUnitInfo);
 begin
-  FreeAndNil(CS);
-  FreeAndNil(IgnoreFiles);
-  FreeAndNil(SeedFiles);
-  FreeAndNil(AssociatedFiles);
-  FreeAndNil(UpdatedFiles);
-  FreeAndNil(UsedProject);
-  FreeAndNil(UndetectedUnits);
+  for var ValuesArr in UnitInfo.OtherUsedItems.Values do begin
+    for var Value in ValuesArr do begin
+      var path := CalcPath(Value, UnitPath);
+      AddFile(path);
+    end;
+  end;
+end;
+
+constructor TScanner.Create;
+begin
+  FPasFiles     :=   TDictionary<string, string>.Create;
+  FDprojFiles   :=   ParseUsedProject(ProjGroupFile);
+  FFiles        :=   TDictionary<string, integer>.Create;
+  FUsedFiles    :=   TStringList.Create;
+  FIgnoreFiles  :=   TStringList.Create;
+  FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
+end;
+
+destructor TScanner.Destroy;
+begin
+  FreeAndNil(FPasFiles);
+  FreeAndNil(FDprojFiles);
+  FreeAndNil(FFiles);
+  FreeAndNil(FUsedFiles);
+  FreeAndNil(FIgnoreFiles);
+  FreeAndNil(FPascalUnitExtractor);
+end;
+
+procedure TScanner.DoScan(const FilePath: string);
+var
+  UnitInfo: IUnitInfo;
+begin
+  var Extension := LowerCase(ExtractFileExt(FilePath));
+  if SameText(Extension, '.pas') OR SameText(Extension, '.dpr') then begin
+    self.DoScanUnit(FilePath);
+  end else if SameText(Extension, '.rc') then begin
+    self.DoScanRCFiles(FilePath);
+  end;
+end;
+
+procedure TScanner.DoScanRCFiles(const RCFilePath: string);
+begin
+  if FileExists(RCFilePath) then begin
+    var files := ReadRCFile(RCFilePath);
+    for var f in files do begin
+      var InnerFilePath := CalcPath(f, RCFilePath);
+      AddFile(InnerFilePath)
+    end;
+  end else
+    raise Exception.Create(RCFilePath + ' не существует')
+end;
+
+procedure TScanner.DoScanUnit(const UnitPath: string);
+var
+  UnitInfo: IUnitInfo;
+  Parsed: Boolean;
+  pas: string;
+begin
+  Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
+  if Parsed then begin
+
+    if UnitInfo.OtherUsedItems.Count > 0 then begin
+      AddOtherFiles(UnitPath, UnitInfo);
+    end;
+
+    for var un in UnitInfo.UsedUnits do begin
+
+      var du := LowerCase(un.DelphiUnitName);
+
+      {Нужно ли проигнорировать?}
+      if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
+        continue;
+
+        if fPasFiles.TryGetValue(du + '.pas', pas) then begin
+          AddFile(pas);
+        end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
+          UndetectedUnits.Add(du);
+        end;
+    end;
+  end;
+end;
+
+procedure TScanner.FindFilesFromProject(const ProjectPath: string);
+var
+  Extension: string;
+  List: TStringList;
+  Line: string;
+  FindBlock: string;
+  WorkPath: string;
+begin
+  List := TStringList.Create;
+  Extension := ExtractFileExt(ProjectPath);
+
+  {Анализируем переданный аргумент на возможность получения путей юнитов}
+  if SameText(Extension, '.dproj') then begin
+    if FileExists(ReplacePathExtension(ProjectPath, '.dpk')) then begin
+      WorkPath := ReplacePathExtension(ProjectPath, '.dpk');
+    end else if FileExists(ReplacePathExtension(ProjectPath, '.dpr')) then begin
+      WorkPath := ReplacePathExtension(ProjectPath, '.dpr');
+    end;
+  end else if SameText(Extension, '.dpk') OR SameText(Extension, '.dpr') then begin
+    WorkPath := ProjectPath;
+  end else begin
+    raise Exception.Create('Файл неправильный файл');
+  end;
+
+  List.LoadFromFile(WorkPath);
+
+
+  {Блок, в котором находятся юниты и их пути}
+  Extension := ExtractFileExt(WorkPath);
+  if SameText(Extension, '.dpr') then
+    FindBlock := 'uses'
+  else if SameText(Extension, '.dpk') then
+    FindBlock := 'contains';
+
+  {Добавляем найденные юниты с путями}
+  var Counter := 0;
+  while Counter < List.Count-1 do begin
+    Line := List.Strings[Counter];
+
+    if SameText(Line, FindBlock) then begin
+      Inc(Counter);
+      while (not Line.EndsWith(';') AND (Counter < List.Count-1)) do begin
+        Line := List.Strings[Counter].Trim;
+        var Words := Line.Split([' ']);
+        case Length(Words) of
+          3, 4: begin
+            if not FPasFiles.ContainsKey(LowerCase(Words[0] + '.pas')) then begin
+              var PasPath := Words[2].Trim([' ', '''', '"', ',', ';']);
+              PasPath := CalcPath(PasPath, WorkPath);
+              FPasFiles.Add(LowerCase(Words[0] + '.pas'), PasPath);
+            end;
+          end;
+        end;
+        Inc(Counter);
+      end;
+    end;
+    Inc(Counter);
+  end;
+
+  FreeAndNil(List);
+end;
+
+procedure TScanner.LoadSettings(const DprojFile: TDprojFile);
+begin
+   { Добавляет доступные define проекта }
+   FPascalUnitExtractor.DefineAnalizator.EnableDefines := DprojFile.GetDefinies([All, Win64], [Base, Cfg_2]);
+
+   {Формируем массив файлов, которые нужно проигнорировать}
+   AddIngoreFilesFromResource;
+   AddIgnoreFiles(DprojFile.GetDebuggerFiles(Win64, Cfg_2));
+   AddIgnoreFile('SVG2Png');
+
+  {Формируем словарь юнитов проекта и пути к ним}
+  FindFilesFromProject(DprojFile.FilePath);
+  var SearchPaths := DprojFile.GetSearchPath([All], [Base]);
+  for var SearchPath in SearchPaths do begin
+    var PathParts := SearchPath.Split(['\']);
+    var ProjectName := PathParts[Length(PathParts)-1];
+    var ProjectPath: string;
+    if FDprojFiles.TryGetValue(LowerCase(ProjectName), ProjectPath) then begin
+      ProjectPath := CalcPath(ProjectPath, ProjGroupFile);
+      FindFilesFromProject(ProjectPath);
+    end;
+  end;
+end;
+
+procedure TScanner.Scan(const Files: array of string);
+
+begin
+  for var F in Files do begin
+    AddFile(F);
+  end;
+  StartScan;
+end;
+
+procedure TScanner.StartScan;
+const
+  I: Integer = 0;
+begin
+  while I < FUsedFiles.Count do begin
+    DoScan(FUsedFiles[I]);
+    Inc(I);
+  end;
+end;
+
+procedure TScanner.Scan(const Dprojfile: TDprojFile);
+const
+  I: Integer = 0;
+begin
+  if DprojFile <> nil then begin
+    AddFile(DprojFile.FilePath);
+    AddFile(ReplacePathExtension(DprojFile.FilePath, '.dpr'));
+    AddFile(ReplacePathExtension(DprojFile.FilePath, '_icon.ico'));
+    AddFiles(Dprojfile.Resources);
+    StartScan;
+  end;
 end;
 
 begin
@@ -603,40 +548,26 @@ begin
   end;
 
   Initialize;
-  LoadResources;
 
   InputThread := TInputThread.Create(True);
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-  var ScanFile := SeedFile;
+  var DprojFile := TDprojFile.Create(SeedFile);
+
+  var Scanner := TScanner.Create;
+  Scanner.LoadSettings(DprojFile);
 
   while True do begin
 
     case Step of
       // 1 Этап: Парсинг
       stParsing: begin
-
-        if ScanThread = nil then begin
-          ScanThread := TScanThread.Create(True, ScanFile);
-          ScanThread.FreeOnTerminate := True;
-          ScanThread.Start;
-          Writeln('Начало сканирования.....');
-        end;
-
-        while Counter < SeedFiles.GetCount do begin
-          // Progress Bar
-          Writeln(Counter.ToString + ' -- ' + SeedFiles[Counter].Path);
-          Inc(Counter);
-        end;
-
-        if ScanThread.Finished then begin
-          Step := stCoping;
-          Writeln('Просканировано - ' + SeedFiles.GetCount.ToString + ' файлов.');
-          Writeln('Конец сканирования');
-          ScanThread := nil;
-        end;
-
+        Writeln('Начало сканирования.....');
+        Scanner.Scan(DprojFile);
+        Writeln('Конец Сканироания...');
+        Writeln('Просканировано - ' + SeedFiles.GetCount.ToString + ' файлов.');
+        Step := stCoping;
       end;
 
       // 2 Этап: Копирование
@@ -678,9 +609,9 @@ begin
         if InputThread <> nil then begin
           InputThread.Terminate;
         end;
-        if ScanThread <> nil then begin
-          ScanThread.Terminate;
-        end;
+//        if ScanThread <> nil then begin
+//          ScanThread.Terminate;
+//        end;
         if CopyThread <> nil then begin
           CopyThread.Terminate;
         end;

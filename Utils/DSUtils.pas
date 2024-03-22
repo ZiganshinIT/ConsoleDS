@@ -33,6 +33,8 @@ uses
 
   function GetDownPath(const path: string): string;
 
+  function ReplacePathExtension(const Path, NewExtension: string): string;
+
   // Copy operation
   procedure CopyWithDir(const SourceDir, DestDir: string);
 
@@ -47,7 +49,7 @@ uses
   function IsSimilarity(const str1, str2: string): Boolean;
 
   // GroupProj file operation
-  function ParseUsedProject(const GroupProjFile: string): TStringList;
+  function ParseUsedProject(const GroupProjFile: string): TDictionary<string, string>;
 
 implementation
 
@@ -238,6 +240,11 @@ begin
   result := string.Join('\', PathParts);
 end;
 
+function ReplacePathExtension(const Path, NewExtension: string): string;
+begin
+  result := StringReplace(Path, ExtractFileExt(Path), NewExtension, [rfIgnoreCase]);
+end;
+
 { Copy operation}
 
 procedure CopyWithDir(const SourceDir, DestDir: string);
@@ -373,26 +380,24 @@ begin
   end;
 
 // GroupProj file operation
-function ParseUsedProject(const GroupProjFile: string): TStringList;
+function ParseUsedProject(const GroupProjFile: string): TDictionary<string, string>;
 var
   XMLDoc: IXMLDocument;
   RootNode, ItemGroupNode: IXMLNode;
 begin
-  result := TStringList.Create;
+  result := TDictionary<string, string>.Create;
   try
     XMLDoc := TXMLDocument.Create(nil);
     XMLDoc.LoadFromFile(GroupProjFile);
-
     RootNode := XMLDoc.DocumentElement;
-
     ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
     if Assigned(ItemGroupNode) then begin
-      for var I := 0 to ItemGroupNode.ChildNodes.Count-1 do begin
-        var node := ItemGroupNode.ChildNodes.Get(I);
-        if node.LocalName = 'Projects' then begin
-          var path := node.Attributes['Include'];
-          result.Add(LowerCase(CalcPath(path, GroupProjFile)));
-        end
+      for var I := 0 to Pred(ItemGroupNode.ChildNodes.Count) do begin
+        var Node := ItemGroupNode.ChildNodes.Get(I);
+        if Node.NodeName = 'Projects' then begin
+          var Path := Node.Attributes['Include'];
+          result.Add(LowerCase(ExtractFileNameWithoutExt(Path)), Path);
+        end;
       end;
     end;
 

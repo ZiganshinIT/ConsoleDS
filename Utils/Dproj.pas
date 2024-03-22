@@ -13,7 +13,7 @@ uses
   XMLDoc, XMLIntf;
 
 type
-  TDprojInfo = class
+  TDprojFile = class
   public
     MainSettings: TMainSettings;
     ConfigSettings: TConfigSettings;
@@ -35,6 +35,7 @@ type
     function GetOutput(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
     function GetDebuggerFiles(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): TArray<string>;
     procedure ReLinkSearchPathTo(const NewLink: string);
+    property FilePath: string read FFilePath;
   end;
 
 implementation
@@ -52,23 +53,23 @@ end;
 
 { TDprojInfo }
 
-constructor TDprojInfo.Create;
+constructor TDprojFile.Create;
 begin
   FXMLDoc := TXMLDocument.Create(nil);
 end;
 
-constructor TDprojInfo.Create(const FileName: string);
+constructor TDprojFile.Create(const FileName: string);
 begin
   self.Create;
   self.LoadFromFile(FileName);
 end;
 
-destructor TDprojInfo.Destroy;
+destructor TDprojFile.Destroy;
 begin
   FXMLDoc := nil;
 end;
 
-procedure TDprojInfo.GetConfigAndPlatformByCondition(const Condition: string;
+procedure TDprojFile.GetConfigAndPlatformByCondition(const Condition: string;
   out PlatformType: TPlatformEnum; out Config: TConfigEnum);
 var
   pe: TPlatformEnum;
@@ -96,7 +97,7 @@ begin
   end;
 end;
 
-function TDprojInfo.GetDebuggerFiles(const PlatformTyp: TPlatformEnum;
+function TDprojFile.GetDebuggerFiles(const PlatformTyp: TPlatformEnum;
   const ConfigTyp: TConfigEnum): TArray<string>;
 
   function IsContain(const f: string; const Arr: TArray<string>): Boolean;
@@ -131,7 +132,7 @@ begin
   end;
 end;
 
-function TDprojInfo.GetDefinies(const Platforms: array of TPlatformEnum;
+function TDprojFile.GetDefinies(const Platforms: array of TPlatformEnum;
   const Configs: array of TConfigEnum): TArray<string>;
 var
   pe: TPlatformEnum;
@@ -156,7 +157,7 @@ begin
   end;
 end;
 
-function TDprojInfo.GetOutput(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
+function TDprojFile.GetOutput(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
 begin
   var output := self.ConfigSettings[PlatformTyp][ConfigTyp][DcuOutput];
   output := InsertPlatformPath(output, self.MainSettings.FPlatform);
@@ -164,7 +165,7 @@ begin
   result := CalcPath(output, self.FFilePath);
 end;
 
-function TDprojInfo.GetSearchPath(const Platforms: array of TPlatformEnum;
+function TDprojFile.GetSearchPath(const Platforms: array of TPlatformEnum;
   const Configs: array of TConfigEnum): TArray<string>;
 var
   pe: TPlatformEnum;
@@ -186,7 +187,7 @@ begin
   end;
 end;
 
-procedure TDprojInfo.LoadFromFile(const FileName: string);
+procedure TDprojFile.LoadFromFile(const FileName: string);
 begin
   CoInitializeEx(nil, COINIT_MULTITHREADED);
 
@@ -204,7 +205,7 @@ begin
   self.LoadSettings;
 end;
 
-procedure TDprojInfo.LoadSettings;
+procedure TDprojFile.LoadSettings;
 var
   RootNode, PropertyGroupNode, ItemGroupNode: IXMLNode;
   SettingField: TSettingsFields;
@@ -255,7 +256,7 @@ begin
   end;
 end;
 
-procedure TDprojInfo.ReLinkSearchPathTo(const NewLink: string);
+procedure TDprojFile.ReLinkSearchPathTo(const NewLink: string);
 var
   RootNode, PropertyGroupNode, ItemGroupNode: IXMLNode;
 begin
