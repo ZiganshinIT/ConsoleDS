@@ -12,19 +12,23 @@ type
     FAge: Integer;
     FPath: string;
     FName: string;
+    FIsSeed: Boolean;
     FAssociatedFile: TFile;
     function GetFileName: string;
+    procedure SetAssociatedFile(const F: TFile);
   public
-    constructor Create(const FilePath: string; const AssociatedFile: TFile = nil);
-    destructor Destroy;
+    constructor Create(const FilePath: string; IsSeedFile: Boolean = False);
 
     property Age: Integer read FAge;
     property Path: string read FPath;
     property Name: string read GetFileName write FName;
-    property AssociatedFile: TFile read FAssociatedFile;
+    property AssociatedFile: TFile read FAssociatedFile write SetAssociatedFile;
+    property IsSeed: Boolean read FIsSeed;
 
     function IsUpdated: Boolean;
     procedure Update;
+
+    destructor Destroy;
   end;
 
   TFileArray = class
@@ -36,9 +40,19 @@ type
     procedure Add(const f: TFile);
     procedure CreateAndAdd(const Path: string);
     function GetByName(const FileName: string): TFile;
+    function Contains(const F: TFile): Boolean;
     procedure Clear;
     property Items[Index: Integer]: TFile read GetItem write SetItem; default;
     function GetCount: Integer;
+  end;
+
+  TDPRFile = class
+  private
+    FPath: string;
+  public
+//    constructor Create(const FilePath: string);                                 overload;
+//    constructor Create(const F: TFile);                                         overload;
+//    procedure UpdateUses
   end;
 
 
@@ -164,13 +178,12 @@ end;
 
 { TFile }
 
-constructor TFile.Create(const FilePath: string; const AssociatedFile: TFile  = nil);
+constructor TFile.Create(const FilePath: string; IsSeedFile: Boolean = False);
 begin
   FPath := FilePath;
   FAge := FileAge(FilePath);
-  FAssociatedFile := AssociatedFile;
-  if AssociatedFile <> nil then
-    AssociatedFile.FAssociatedFile := self;
+  FAssociatedFile := nil;
+  FIsSeed := IsSeedFile;
 end;
 
 destructor TFile.Destroy;
@@ -190,6 +203,14 @@ begin
   result := FAge <> FileAge(FPath);
 end;
 
+procedure TFile.SetAssociatedFile(const F: TFile);
+begin
+  if F <> nil then begin
+    self.FAssociatedFile := F;
+    F.FAssociatedFile := self;
+  end;
+end;
+
 procedure TFile.Update;
 begin
   FAge := FileAge(FPath);
@@ -199,12 +220,26 @@ end;
 
 procedure TFileArray.Add(const f: TFile);
 begin
+  for var Item in FArr do begin
+    if SameText(ExtractFileName(F.Path), ExtractFileName(Item.FPath)) then
+      exit;
+  end;
   FArr := FArr + [F];
 end;
 
 procedure TFileArray.Clear;
 begin
   SetLength(FArr, 0);
+end;
+
+function TFileArray.Contains(const F: TFile): Boolean;
+begin
+  result := False;
+  for var Item in FArr do begin
+    if SameText(Item.Path, F.Path) then begin
+      exit(True)
+    end;
+  end;
 end;
 
 procedure TFileArray.CreateAndAdd(const Path: string);

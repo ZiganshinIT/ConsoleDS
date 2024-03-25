@@ -80,15 +80,12 @@ type
     destructor Destroy;
   end;
 
-  // Syncronizer
-  TCopyThread = class(TThread)
+  TSyncronizer = class
   private
-    FTargetDir: string;
-  protected
-    procedure Execute;                                                          override;
+    function GetLinkedPath(const path: string): string;
     procedure UpdateDPR(const FileName: string);
   public
-    constructor Create(CreateSuspended: Boolean; const TargetDir: string);      overload;
+    procedure Syncronize;
   end;
 
 var
@@ -103,9 +100,11 @@ var
 
   UpdateItem: array of string;
 
+  var DprojFile: TDprojFile;
+
   // Threads
   InputThread: TInputThread;
-  CopyThread: TCopyThread;
+//  CopyThread: TCopyThread;
 
   //
   UndetectedUnits: TStringList;
@@ -144,111 +143,11 @@ begin
   end;
 end;
 
-{ TCopierThread }
-
-{Обновляет ссылки на юниты}
-procedure TCopyThread.UpdateDPR(const FileName: string);
-const
-  DoubleSpace = '  ';
-  IsUsesBlock: Boolean = False;
-var
-  SourseStream: TStreamReader;
-  DestStream: TStringStream;
-begin
-  try
-    DestStream := TStringStream.Create;
-    SourseStream := TStreamReader.Create(FileName);
-
-    while not SourseStream.EndOfStream do begin
-      var Line := SourseStream.ReadLine;
-
-      if IsUsesBlock then begin
-        if Line.EndsWith(';') then begin
-          IsUsesBlock := False;
-          for var I := 0 to UndetectedUnits.Count-1 do begin
-            DestStream.WriteString(DoubleSpace + UndetectedUnits[I]);
-
-            if (I = UndetectedUnits.Count) AND (AssociatedFiles.GetCount = 0) then
-              DestStream.WriteString(';' + #13#10)
-            else
-              DestStream.WriteString(',' + #13#10);
-
-          end;
-
-          for var I := 0 to AssociatedFiles.GetCount-1 do begin
-            if AssociatedFiles[I].Path.EndsWith('.pas') then begin
-              var usedUnit := ExtractFilenameNoExt(AssociatedFiles[I].Path) + ' in ' + '''' + GetRelativeLink(FileName, AssociatedFiles[I].Path) + '''';
-              DestStream.WriteString(DoubleSpace + usedUnit);
-
-              if I < AssociatedFiles.GetCount-1 then
-                DestStream.WriteString(',' + #13#10)
-              else
-                DestStream.WriteString(';' + #13#10);
-            end;
-          end;
-        end;
-        continue;
-      end;
-
-      if SameText(Line.Trim, 'uses') then
-        IsUsesBlock := True;
-
-      DestStream.WriteString(Line + #13#10);
-
-    end;
-
-  finally
-    SourseStream.Free;
-    DestStream.SaveToFile(FileName);
-    DestStream.Free;
-  end;
-end;
-
-constructor TCopyThread.Create(CreateSuspended: Boolean; const TargetDir: string);
-begin
-  inherited Create(CreateSuspended);
-  FTargetDir := TargetDir
-end;
-
-procedure TCopyThread.Execute;
-begin
-  inherited;
-
-  var CommonDir := ExtractCommonPrefix(SeedFiles); // Общий префикс
-  var Name := StringReplace(CommonDir, GetDownPath(ExtractFileDir(CommonDir)), '', [rfReplaceAll, rfIgnoreCase]);  // Название результирующией папки
-
-  for var I := 0 to UpdatedFiles.GetCount-1 do begin
-    var LocalPath := StringReplace(UpdatedFiles[I].Path, CommonDir, '', [rfReplaceAll, rfIgnoreCase]); // путь без общего префикса
-
-    var DestPath := FTargetDir + Name + LocalPath; // результирующее место файла
-    var SourcePath := UpdatedFiles[I].Path;
-
-    if AssociatedFiles.GetByName(UpdatedFiles[I].Name) = nil then begin
-
-      var AssociatedFile := TFile.Create(DestPath, UpdatedFiles[I]);
-      AssociatedFiles.Add(AssociatedFile);
-
-      CopyWithDir(SourcePath, DestPath);
-    end;
-  end;
-
-  // Обновляем uses в dpr
-  var dpr := AssociatedFiles.GetByName(ExtractFileName(SeedFile));
-  self.UpdateDPR(dpr.Path);
-  dpr.Update;
-
-  // Обновляем dproj
-  var dproj := AssociatedFiles.GetByName(ExtractFileNameWithoutExt(SeedFile) + '.dproj');
-//  DprojFile.ReLinkSearchPathTo(dproj.path);
-  dproj.Update;
-end;
-
 { Other}
 
 procedure Initialize;
 begin
-  SearchPath := 'C:\Source\SprutCAM';
-  SeedFile   := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dproj';
+  SeedFile   := 'C:\Source\SprutCAM\NCKernel\NCKernel.dproj';
   TargetPath := 'C:\TestSource';
   ProjGroupFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
 
@@ -274,8 +173,9 @@ begin
   if FileExists(FilePath) AND (not FFiles.ContainsKey(ExtractFileName(FilePath))) then begin
     var index := fUsedFiles.Add(FilePath);
     FFiles.Add(ExtractFileName(FilePath), index);
-    var F := TFile.Create(FilePath);
+    var F := TFile.Create(FilePath, True);
     F.Name := LowerCase(ExtractFileName(FilePath));
+
     SeedFiles.Add(F);
     UpdatedFiles.Add(F);
 
@@ -514,8 +414,141 @@ begin
     AddFile(DprojFile.FilePath);
     AddFile(ReplacePathExtension(DprojFile.FilePath, '.dpr'));
     AddFile(ReplacePathExtension(DprojFile.FilePath, '_icon.ico'));
-    AddFiles(Dprojfile.Resources);
+    for var Res in Dprojfile.Resources do begin
+      AddFile(CalcPath(Res, Dprojfile.FilePath));
+    end;
     StartScan;
+  end;
+end;
+
+{ TSyncronizer }
+
+{Возвращает связаннный путь}
+function TSyncronizer.GetLinkedPath(const path: string): string;
+begin
+  var CommonAssociatedPrefix := TargetPath;//ExtractCommonPrefix(AssociatedFiles);
+  if not CommonAssociatedPrefix.EndsWith('\') then
+    CommonAssociatedPrefix := CommonAssociatedPrefix + '\';
+  var CommonSeedPrefix := ExtractCommonPrefix(SeedFiles);
+
+  if path.StartsWith(TargetPath) then begin
+  // связзаный файл
+    result := StringReplace(path, CommonAssociatedPrefix, CommonSeedPrefix, [rfReplaceAll]);
+
+  end else begin
+  // исходный файл
+    result := StringReplace(path, CommonSeedPrefix, CommonAssociatedPrefix, [rfReplaceAll]);
+  end;
+end;
+
+procedure TSyncronizer.Syncronize;
+var
+  NewFile: TFile;
+  Dpr: TFile;
+  Dproj: TFile;
+begin
+  Dpr := nil;
+  Dproj := nil;
+  for var I := 0 to UpdatedFiles.GetCount-1 do begin
+    var F := UpdatedFiles[I];
+    var path := GetLinkedPath(F.Path);
+    if F.AssociatedFile = nil then begin
+      var IsSeedFile := not F.IsSeed;
+      NewFile := TFile.Create(path, IsSeedFile);
+      F.AssociatedFile := NewFile;
+      if IsSeedFile then begin
+        if not SeedFiles.Contains(NewFile) then
+          SeedFiles.Add(NewFile);
+      end else begin
+        if not AssociatedFiles.Contains(NewFile) then
+          AssociatedFiles.Add(NewFile);
+      end;
+
+      var Extension := ExtractFileExt(NewFile.Path);
+      if SameText(Extension, '.dpr') then begin
+        Dpr := NewFile
+      end else if SameText(Extension, '.dproj') then begin
+        Dproj := NewFile;
+      end;
+    end;
+    CopyWithDir(F.Path, F.AssociatedFile.Path);
+
+    F.Update;
+    F.AssociatedFile.Update;
+  end;
+
+  if Dpr <> nil then begin
+    self.UpdateDPR(Dpr.Path);
+    Dpr.Update;
+    Dpr.AssociatedFile.Update;
+  end;
+
+  if Dproj <> nil then begin
+    DprojFile.ReLinkSearchPathTo(Dproj.Path);
+    Dproj.Update;
+    Dproj.AssociatedFile.Update;
+  end;
+
+  UpdatedFiles.Clear;
+end;
+
+procedure TSyncronizer.UpdateDPR(const FileName: string);
+const
+  DoubleSpace = '  ';
+  IsUsesBlock: Boolean = False;
+var
+  DestStream: TStringStream;
+  SourseList : TStringList;
+begin
+  try
+    DestStream := TStringStream.Create;
+
+    SourseList := TStringList.Create;
+    SourseList.LoadFromFile(FileName);
+
+    for var L := 0 to Pred(SourseList.Count) do begin
+      var Line := SourseList.Strings[L];
+
+      if IsUsesBlock then begin
+        if Line.EndsWith(';') then begin
+          IsUsesBlock := False;
+          for var I := 0 to UndetectedUnits.Count-1 do begin
+            DestStream.WriteString(DoubleSpace + UndetectedUnits[I]);
+
+            if (I = UndetectedUnits.Count) AND (AssociatedFiles.GetCount = 0) then
+              DestStream.WriteString(';' + #13#10)
+            else
+              DestStream.WriteString(',' + #13#10);
+
+          end;
+
+          for var I := 0 to AssociatedFiles.GetCount-1 do begin
+            if AssociatedFiles[I].Path.EndsWith('.pas') then begin
+              var usedUnit := ExtractFilenameNoExt(AssociatedFiles[I].Path) + ' in ' + '''' + GetRelativeLink(FileName, AssociatedFiles[I].Path) + '''';
+              DestStream.WriteString(DoubleSpace + usedUnit);
+
+              if I < AssociatedFiles.GetCount-1 then
+                DestStream.WriteString(',' + #13#10)
+              else
+                DestStream.WriteString(';' + #13#10);
+            end;
+          end;
+        end;
+        continue;
+      end;
+
+      if SameText(Line.Trim, 'uses') then
+        IsUsesBlock := True;
+
+      DestStream.WriteString(Line + #13#10);
+
+    end;
+
+  finally
+//    SourseStream.Free;
+    DestStream.SaveToFile(FileName);
+    DestStream.Free;
+    SourseList.Free;
   end;
 end;
 
@@ -553,10 +586,12 @@ begin
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-  var DprojFile := TDprojFile.Create(SeedFile);
+  DprojFile := TDprojFile.Create(SeedFile);
 
   var Scanner := TScanner.Create;
   Scanner.LoadSettings(DprojFile);
+
+  var Syncronizer := TSyncronizer.Create;
 
   while True do begin
 
@@ -572,36 +607,34 @@ begin
 
       // 2 Этап: Копирование
       stCoping: begin
-
-        if CopyThread = nil then begin
-          CopyThread := TCopyThread.Create(True, TargetPath);
-          CopyThread.FreeOnTerminate := true;
-          CopyThread.Start;
-          Writeln('Начало копирования.....');
-        end;
-
-        if CopyThread.Finished then begin
-          Step := stUpdate;
-          Writeln('Конец копирования');
-          Writeln('Начало обновления');
-          CopyThread := nil;
-        end;
+        Syncronizer.Syncronize;
+        Step := stUpdate;
 
       end;
 
       // 3 Этап: Синхронизация
       stUpdate: begin
 
+        for var I := 0 to SeedFiles.GetCount-1 do begin
+          var f := SeedFiles[I];
+          if F.IsUpdated then begin
+            Writeln(ExtractFileName(f.Path) + ' был обновлен.');
+            UpdatedFiles.Add(F);
+            Scanner.Scan(F.Path);
+          end;
+        end;
+
         for var I := 0 to AssociatedFiles.GetCount-1 do begin
           var f := AssociatedFiles[I];
           if F.IsUpdated then begin
             Writeln(ExtractFileName(f.Path) + ' был обновлен.');
-            var Seed := F.AssociatedFile.Path;
-            CopyFile(PChar(F), PChar(Seed), False);
-            // Обновить файл исходного проекта
-            F.Update;
+            UpdatedFiles.Add(F);
+            Scanner.Scan(F.Path);
           end;
         end;
+
+        Syncronizer.Syncronize;
+
       end;
 
       // 4 Этап: Завершение
@@ -612,9 +645,9 @@ begin
 //        if ScanThread <> nil then begin
 //          ScanThread.Terminate;
 //        end;
-        if CopyThread <> nil then begin
-          CopyThread.Terminate;
-        end;
+//        if CopyThread <> nil then begin
+//          CopyThread.Terminate;
+//        end;
 
         BREAK;
       end;
