@@ -130,6 +130,7 @@ type
     _ELSEIF,
     _ELSE,
     _ENDIF,
+    _DEFINE,
     _NONE
   );
 
@@ -140,6 +141,7 @@ type
 
   TDefineAnalizator = class
   private
+    FFileDefine: TArray<string>;
     FStack: array of TDefine;
     FEnableDefines: TArray<string>;
     FResult: Boolean;
@@ -155,6 +157,7 @@ type
   public
     procedure Analize(const Defines: string);
     procedure ClearStack;
+    procedure ClearFileDefine;
 
     property Result: Boolean read FResult;
     property EnableDefines: TArray<string> read FEnableDefines write FEnableDefines;
@@ -496,8 +499,9 @@ begin
       end;
 
       _IFNDEF: begin
+        d.IsEnable := not d.IsEnable;
         self.Add(d);
-        FResult := not d.IsEnable;
+        FResult := d.IsEnable;
       end;
 
       _ELSE: begin
@@ -511,10 +515,22 @@ begin
         if Length(FStack) > 0 then
           FResult := top.IsEnable;
       end;
+
+      _DEFINE: begin
+        if FResult then begin
+          FFileDefine := FFileDefine + [d.Expression];
+          FResult := True;
+        end;
+      end;
     end;
 
     define := GetNext;
   end;
+end;
+
+procedure TDefineAnalizator.ClearFileDefine;
+begin
+  SetLength(FFileDefine, 0);
 end;
 
 procedure TDefineAnalizator.ClearStack;
@@ -540,6 +556,7 @@ begin
     _ELSEIF  : skipCount := 2;
     _ELSE    : skipCount := 1;
     _ENDIF   : skipCount := 1;
+    _DEFINE : skipCount := 1;
   end;
 
   for var I := skipCount to Length(words)-1 do begin
@@ -566,6 +583,8 @@ begin
     result := _ELSE
   else if SameText(UpperCase(typ), 'ENDIF') then
     result := _ENDIF
+  else if SameText(UpperCase(typ), 'DEFINE') then
+    result := _DEFINE
   else
     result := _NONE;
 end;
@@ -574,12 +593,21 @@ function TDefineAnalizator.IsDefineEnable(const Define: string): Boolean;
 begin
   result := False;
   var exp := GetDefineExpression(Define);
-  if LowerCase(exp).StartsWith('use_svg2') then
-    var a := 1;
+
   for var Enable in FEnableDefines do begin
-    if SameText(LowerCase(exp), LowerCase(Enable)) then
+    if SameText(LowerCase(exp), LowerCase(Enable)) then begin
       exit(True);
+    end;
   end;
+
+  if Length(FFileDefine) > 0 then begin
+    for var Enable in FFileDefine do begin
+      if SameText(LowerCase(exp), LowerCase(Enable)) then begin
+        exit(True);
+      end;
+    end;
+  end;
+
 end;
 
 procedure TDefineAnalizator.Remove;

@@ -169,6 +169,9 @@ end;
 
 function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitInfo: IUnitInfo): Boolean;
 
+var
+  IsAvailable: Boolean;
+
   function StripQuotes(const Value: String): String;
   begin
     Result := Trim(Value);
@@ -182,6 +185,30 @@ function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitI
       Result := copy(Result, 1, Result.Length - 1);
 
     Result := Trim(Result);
+  end;
+
+  function SplitText(const Text: string): TArray<string>;
+  var
+    word: TStringBuilder;
+  begin
+    word := TStringBuilder.Create;
+    for var letter in Text do begin
+      if SameText(letter, #13) OR SameText(letter, #10) then begin
+        continue;
+      end else if SameText(letter, '{') then begin
+        if word.Length <> 0 then begin
+          result := result + [Trim(word.ToString)];
+          word.Clear;
+        end;
+        word.Append(letter);
+      end else if SameText(letter, '}') then begin
+        word.Append(letter);
+        result := result + [word.ToString];
+        word.Clear;
+      end else
+        word.Append(letter);
+    end;
+    result := result + [Trim(word.ToString)];
   end;
 
   procedure ExtractFiles(const ExtsArr: array of string; const FindTo: array of string);
@@ -227,11 +254,12 @@ function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitI
     // Режим "Построчный"
     FTokeniser.ReadMode := byLine;
 
-    // Предстваление массива расширений в допустимый для рег.выражения
+    // Предстваление массива расширений в допустимый для рег.выражения представлении
     var SearchExt := BuildRegExString(ExtsArr);
 
     while not (FTokeniser.Eof) AND not (IsContains(FTokeniser.Token.Text, FindTo)) do
     begin
+
       if TRegEx.IsMatch(FTokeniser.Token.Text, '(\{\$)(.+)(\.)(' + SearchExt + ')(.*)(\})', [roIgnoreCase]) then begin
         var words := FTokeniser.Token.Text.Split([' ']);
         var Extensions := SearchExt.Split(['|']);
@@ -253,6 +281,13 @@ function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitI
             end;
           end;
         end;
+
+      end else if FTokeniser.Token.Text.StartsWith('{$') then begin
+        var words := SplitText(FTokeniser.Token.Text);
+        for var w in words do begin
+          FDefineAnalizor.Analize(w);
+          IsAvailable := FDefineAnalizor.Result;
+        end;
       end;
       FTokeniser.Next;
     end;
@@ -260,29 +295,7 @@ function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitI
     FTokeniser.ReadMode := ReadModeStore;
   end;
 
-  function SplitText(const Text: string): TArray<string>;
-  var
-    word: TStringBuilder;
-  begin
-    word := TStringBuilder.Create;
-    for var letter in Text do begin
-      if SameText(letter, #13) OR SameText(letter, #10) then begin
-        continue;
-      end else if SameText(letter, '{') then begin
-        if word.Length <> 0 then begin
-          result := result + [Trim(word.ToString)];
-          word.Clear;
-        end;
-        word.Append(letter);
-      end else if SameText(letter, '}') then begin
-        word.Append(letter);
-        result := result + [word.ToString];
-        word.Clear;
-      end else
-        word.Append(letter);
-    end;
-    result := result + [Trim(word.ToString)];
-  end;
+
 
   procedure ExtractUnits(UsesType: TUsedUnitType);
   var
@@ -292,13 +305,12 @@ function TPascalUnitExtractor.GetUsedUnits(const UnitFileName: String; var UnitI
     InFilePos: Integer;
   begin
     FDefineAnalizor.ClearStack;
-    var IsAvailable := True; // флаг определяющий будет ли добавлен unit
+//    var IsAvailable := True; // флаг определяющий будет ли добавлен unit
     while not FTokeniser.Eof do begin
       FTokeniser.Next([',' , ';'], Delimiter);
 
       if not FTokeniser.Eof then begin
         var words := SplitText(FTokeniser.Token.Text);
-        var ab := 1;
 
         for var word in words do begin
 
@@ -365,6 +377,10 @@ var
 begin
   Result := TRUE;
 
+  FDefineAnalizor.ClearStack;
+  FDefineAnalizor.ClearFileDefine;
+  IsAvailable := True;
+
   UnitInfo := TUnitInfo.Create;
   UnitInfo.Filename := UnitFileName;
 
@@ -399,6 +415,9 @@ begin
   FTokeniser.Next;
 
   UnitInfo.DelphiUnitName := FTokeniser.Token.Text;
+
+  if SameText(UnitInfo.DelphiUnitName, 'gp') then
+    var a := 1;
 
   if SameText(UnitInfo.DelphiUnitName, ExtractFilenameNoExt(UnitFilename)) then
   begin

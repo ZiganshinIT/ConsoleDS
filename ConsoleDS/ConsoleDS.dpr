@@ -46,6 +46,7 @@ type
   TScanner = class
   private
     FPasFiles:   TDictionary<string, string>;
+    FDcuFiles:   TDictionary<string, string>;
     FDprojFiles: TDictionary<string, string>;
     FFiles:      TDictionary<string, integer>;
     FUsedFiles:  TStringList;
@@ -54,6 +55,7 @@ type
   protected
     procedure StartScan;
     procedure FindFilesFromProject(const ProjectPath: string);
+
 
     {Add Files Operations}
     procedure AddFile(const FilePath: string);
@@ -77,6 +79,8 @@ type
     procedure Scan(const Dprojfile: TDprojFile);                                overload;
     procedure Scan(const Files: array of string);                               overload;
 
+    procedure FindFilesInFolder(const Folder: string);
+
     destructor Destroy;
   end;
 
@@ -98,15 +102,11 @@ var
   AssociatedFiles: TFileArray;
   UpdatedFiles: TFileArray;
 
-  UpdateItem: array of string;
-
   var DprojFile: TDprojFile;
 
   // Threads
   InputThread: TInputThread;
-//  CopyThread: TCopyThread;
 
-  //
   UndetectedUnits: TStringList;
 
 const
@@ -147,7 +147,7 @@ end;
 
 procedure Initialize;
 begin
-  SeedFile   := 'C:\Source\SprutCAM\NCKernel\NCKernel.dproj';
+  SeedFile   := 'C:\Source\SprutCAM\SCKernelConsole\main\SCKernelConsole.dproj';
   TargetPath := 'C:\TestSource';
   ProjGroupFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
 
@@ -230,6 +230,7 @@ end;
 constructor TScanner.Create;
 begin
   FPasFiles     :=   TDictionary<string, string>.Create;
+  FDcuFiles     :=   TDictionary<string, string>.Create;
   FDprojFiles   :=   ParseUsedProject(ProjGroupFile);
   FFiles        :=   TDictionary<string, integer>.Create;
   FUsedFiles    :=   TStringList.Create;
@@ -240,6 +241,7 @@ end;
 destructor TScanner.Destroy;
 begin
   FreeAndNil(FPasFiles);
+  FreeAndNil(FDcuFiles);
   FreeAndNil(FDprojFiles);
   FreeAndNil(FFiles);
   FreeAndNil(FUsedFiles);
@@ -288,11 +290,16 @@ begin
 
       var du := LowerCase(un.DelphiUnitName);
 
+      if SameText(du, 'gpCont') then
+        var a := 1;
+
       {Нужно ли проигнорировать?}
       if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
         continue;
 
         if fPasFiles.TryGetValue(du + '.pas', pas) then begin
+          AddFile(pas);
+        end else if fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
           AddFile(pas);
         end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
           UndetectedUnits.Add(du);
@@ -361,6 +368,26 @@ begin
   end;
 
   FreeAndNil(List);
+end;
+
+procedure TScanner.FindFilesInFolder(const Folder: string);
+var
+  FoundFiles: TStringDynArray;
+  FileName: string;
+begin
+  FoundFiles := TDirectory.GetFiles(Folder, '*.*', TSearchOption.soAllDirectories);
+  for FileName in FoundFiles do
+  begin
+    var ext := ExtractFileExt(FileName);
+    if SameText(ext, '.pas') then begin
+      if not fPasFiles.ContainsKey(ExtractFileName(FileName))then begin
+        fPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+      end;
+    end else if SameText(ext, '.dcu') then begin
+      if not fDcuFiles.ContainsKey(LowerCase(ExtractFileName(FileName))) then
+        fDcuFiles.AddOrSetValue(ExtractFileName(FileName), FileName);
+    end;
+  end;
 end;
 
 procedure TScanner.LoadSettings(const DprojFile: TDprojFile);
@@ -523,7 +550,7 @@ begin
           end;
 
           for var I := 0 to AssociatedFiles.GetCount-1 do begin
-            if AssociatedFiles[I].Path.EndsWith('.pas') then begin
+            if LowerCase(AssociatedFiles[I].Path).EndsWith('.pas') then begin
               var usedUnit := ExtractFilenameNoExt(AssociatedFiles[I].Path) + ' in ' + '''' + GetRelativeLink(FileName, AssociatedFiles[I].Path) + '''';
               DestStream.WriteString(DoubleSpace + usedUnit);
 
@@ -545,7 +572,6 @@ begin
     end;
 
   finally
-//    SourseStream.Free;
     DestStream.SaveToFile(FileName);
     DestStream.Free;
     SourseList.Free;
@@ -586,10 +612,14 @@ begin
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-  DprojFile := TDprojFile.Create(SeedFile);
-
   var Scanner := TScanner.Create;
-  Scanner.LoadSettings(DprojFile);
+
+  if SeedFile.EndsWith('.dproj') then begin
+    DprojFile := TDprojFile.Create(SeedFile);
+    Scanner.LoadSettings(DprojFile);
+  end else begin
+    Scanner.FindFilesInFolder(GetDownPath(ProjGroupFile));
+  end;
 
   var Syncronizer := TSyncronizer.Create;
 
@@ -599,7 +629,10 @@ begin
       // 1 Этап: Парсинг
       stParsing: begin
         Writeln('Начало сканирования.....');
-        Scanner.Scan(DprojFile);
+        if DprojFile <> nil then
+          Scanner.Scan(DprojFile)
+        else
+          Scanner.Scan(SeedFile);
         Writeln('Конец Сканироания...');
         Writeln('Просканировано - ' + SeedFiles.GetCount.ToString + ' файлов.');
         Step := stCoping;
@@ -642,12 +675,6 @@ begin
         if InputThread <> nil then begin
           InputThread.Terminate;
         end;
-//        if ScanThread <> nil then begin
-//          ScanThread.Terminate;
-//        end;
-//        if CopyThread <> nil then begin
-//          CopyThread.Terminate;
-//        end;
 
         BREAK;
       end;
