@@ -104,7 +104,8 @@ type
     DebuggerSourcePath,
     Definies,
     ResourceOutputPath,
-    DcuOutput
+    DcuOutput,
+    Debugger_HostApplication
   );
 
   TConfigSettings = array [TPlatformEnum, TConfigEnum, TSettingsFields] of string;
@@ -116,7 +117,8 @@ const
     'Debugger_DebugSourcePath',
     'DCC_Define',
     'BRCC_OutputDir',
-    'DCC_DcuOutput'
+    'DCC_DcuOutput',
+    'Debugger_HostApplication'
   );
 
 implementation

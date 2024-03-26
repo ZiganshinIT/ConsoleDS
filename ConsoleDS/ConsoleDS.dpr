@@ -3,14 +3,18 @@
 {$APPTYPE CONSOLE}
 
 {$R Resources/DSres.RES}
+
 {$R *.res}
 
 uses
   Winapi.Windows,
-
-  System.SysUtils, System.Classes, System.Types, System.IOUtils, System.Threading,
-  System.Generics.Collections, System.SyncObjs,
-
+  System.SysUtils,
+  System.Classes,
+  System.Types,
+  System.IOUtils,
+  System.Threading,
+  System.Generics.Collections,
+  System.SyncObjs,
   Duds.Common.Classes in '..\DUDS\Duds.Common.Classes.pas',
   Duds.Common.Delphi in '..\DUDS\Duds.Common.Delphi.pas',
   Duds.Common.Files in '..\DUDS\Duds.Common.Files.pas',
@@ -20,10 +24,10 @@ uses
   Duds.Common.Strings in '..\DUDS\Duds.Common.Strings.pas',
   Duds.Common.Types in '..\DUDS\Duds.Common.Types.pas',
   Duds.Common.Utils in '..\DUDS\Duds.Common.Utils.pas',
-
   Dproj in '..\Utils\Dproj.pas',
   DSTypes in '..\Utils\DSTypes.pas',
-  DSUtils in '..\Utils\DSUtils.pas';
+  DSUtils in '..\Utils\DSUtils.pas',
+  DprojStructure in '..\Utils\DprojStructure.pas';
 
 const
   SytsemDelimiter = '\';
@@ -56,7 +60,6 @@ type
     procedure StartScan;
     procedure FindFilesFromProject(const ProjectPath: string);
 
-
     {Add Files Operations}
     procedure AddFile(const FilePath: string);
     procedure AddFiles(const Files: array of string);
@@ -88,26 +91,32 @@ type
   private
     function GetLinkedPath(const path: string): string;
     procedure UpdateDPR(const FileName: string);
+    procedure CreateDpr(const FileName: string);
   public
     procedure Syncronize;
   end;
 
 var
-  SearchPath: string;
   SeedFile: string;
   TargetPath: string;
-  ProjGroupFile: string;
+
+  GroupProjFile: string;
+  ProjFile:  string;
+
+  SearchDir: string;
 
   SeedFiles: TFileArray;
   AssociatedFiles: TFileArray;
   UpdatedFiles: TFileArray;
 
-  var DprojFile: TDprojFile;
+  DprojFile: TDprojFile;
 
   // Threads
   InputThread: TInputThread;
 
   UndetectedUnits: TStringList;
+
+  IsPasFile: Boolean;
 
 const
   Step: TStep = stParsing;
@@ -147,9 +156,6 @@ end;
 
 procedure Initialize;
 begin
-  SeedFile   := 'C:\Source\SprutCAM\SCKernelConsole\main\SCKernelConsole.dproj';
-  TargetPath := 'C:\TestSource';
-  ProjGroupFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
 
   SeedFiles := TFileArray.Create;
   AssociatedFiles := TFileArray.Create;
@@ -231,7 +237,8 @@ constructor TScanner.Create;
 begin
   FPasFiles     :=   TDictionary<string, string>.Create;
   FDcuFiles     :=   TDictionary<string, string>.Create;
-  FDprojFiles   :=   ParseUsedProject(ProjGroupFile);
+  if not GroupProjFile.IsEmpty then
+    FDprojFiles   :=   ParseUsedProject(GroupProjFile);
   FFiles        :=   TDictionary<string, integer>.Create;
   FUsedFiles    :=   TStringList.Create;
   FIgnoreFiles  :=   TStringList.Create;
@@ -289,9 +296,6 @@ begin
     for var un in UnitInfo.UsedUnits do begin
 
       var du := LowerCase(un.DelphiUnitName);
-
-      if SameText(du, 'gpCont') then
-        var a := 1;
 
       {Нужно ли проигнорировать?}
       if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
@@ -408,7 +412,7 @@ begin
     var ProjectName := PathParts[Length(PathParts)-1];
     var ProjectPath: string;
     if FDprojFiles.TryGetValue(LowerCase(ProjectName), ProjectPath) then begin
-      ProjectPath := CalcPath(ProjectPath, ProjGroupFile);
+      ProjectPath := CalcPath(ProjectPath, GroupProjFile);
       FindFilesFromProject(ProjectPath);
     end;
   end;
@@ -428,6 +432,8 @@ const
   I: Integer = 0;
 begin
   while I < FUsedFiles.Count do begin
+    if Step = stFinish then
+      exit;
     DoScan(FUsedFiles[I]);
     Inc(I);
   end;
@@ -451,6 +457,87 @@ end;
 { TSyncronizer }
 
 {Возвращает связаннный путь}
+procedure TSyncronizer.CreateDpr(const FileName: string);
+// Отступы
+const
+  Level: Integer = 0;
+
+  procedure IncLevel;
+  begin
+    Inc(Level);
+  end;
+
+  procedure DecLevel;
+  begin
+    If Level > 0 then
+      Dec(Level);
+  end;
+
+var
+  stream: TStringStream;
+
+  procedure WriteLine(line: string = '');
+  begin
+    for var I := 1 to Level do begin
+      stream.WriteString(#9);
+    end;
+    stream.WriteString(line + #13#10);
+  end;
+
+begin
+  var Name := ExtractFileNameWithoutExt(FileName);
+  stream := TStringStream.Create;
+  try
+  // Header
+    var Header := 'program ' + Name + ';';
+    WriteLine(Header);
+    WriteLine;
+
+  // Uses section
+    WriteLine('uses');
+    IncLevel;
+
+    for var I := 0 to UndetectedUnits.Count-1 do begin
+      var unitName := UndetectedUnits[I];
+      if (I = UndetectedUnits.Count) AND (AssociatedFiles.GetCount = 0) then
+        unitName := unitName + ','
+      else
+        unitName := unitName + ';';
+      WriteLine(unitName);
+
+    end;
+
+    for var I := 1 to AssociatedFiles.GetCount-1 do begin
+      if LowerCase(AssociatedFiles[I].Path).EndsWith('.pas') then begin
+        var usedUnit := ExtractFilenameNoExt(AssociatedFiles[I].Path) + ' in ' + '''' + GetRelativeLink(FileName, AssociatedFiles[I].Path) + '''';
+        if I < AssociatedFiles.GetCount-1 then
+         usedUnit := usedUnit + ','
+        else
+          usedUnit := usedUnit + ';';
+        WriteLine(usedUnit);
+
+
+      end;
+    end;
+
+    DecLevel;
+    WriteLine;
+
+  // begin-end section
+    WriteLine('begin');
+    IncLevel;
+    WriteLine;
+    DecLevel;
+    WriteLine('end.');
+
+  //Save
+    stream.SaveToFile(FileName);
+
+  finally
+    stream.Free;
+  end;
+end;
+
 function TSyncronizer.GetLinkedPath(const path: string): string;
 begin
   var CommonAssociatedPrefix := TargetPath;//ExtractCommonPrefix(AssociatedFiles);
@@ -469,6 +556,7 @@ begin
 end;
 
 procedure TSyncronizer.Syncronize;
+
 var
   NewFile: TFile;
   Dpr: TFile;
@@ -491,12 +579,20 @@ begin
           AssociatedFiles.Add(NewFile);
       end;
 
-      var Extension := ExtractFileExt(NewFile.Path);
-      if SameText(Extension, '.dpr') then begin
-        Dpr := NewFile
-      end else if SameText(Extension, '.dproj') then begin
-        Dproj := NewFile;
+      if IsPasFile then begin
+
+      end else begin
+
+        var Extension := ExtractFileExt(NewFile.Path);
+        if SameText(Extension, '.dpr') then begin
+          Dpr := NewFile
+        end else if SameText(Extension, '.dproj') then begin
+          Dproj := NewFile;
+        end;
+
       end;
+
+
     end;
     CopyWithDir(F.Path, F.AssociatedFile.Path);
 
@@ -504,16 +600,41 @@ begin
     F.AssociatedFile.Update;
   end;
 
-  if Dpr <> nil then begin
-    self.UpdateDPR(Dpr.Path);
-    Dpr.Update;
-    Dpr.AssociatedFile.Update;
-  end;
+  if IsPasFile then begin
+    var dprPath := ExtractFilePath(SeedFile) + ExtractFileNameWithoutExt(SeedFile) + '.dpr';
+    dprPath := GetLinkedPath(dprPath);
+    self.CreateDpr(dprPath);
+    var dprojPath :=  ExtractFilePath(SeedFile) + ExtractFileNameWithoutExt(SeedFile) + '.dproj';
+    dprojPath := GetLinkedPath(dprojPath);
+    var dprojF := TDprojFile.Create;
+    var guid: TGUID;
+    CreateGUID(guid);
 
-  if Dproj <> nil then begin
-    DprojFile.ReLinkSearchPathTo(Dproj.Path);
-    Dproj.Update;
-    Dproj.AssociatedFile.Update;
+    if not ProjFile.IsEmpty then begin
+      var searchPath := DprojFile.ConfigSettings[All][Base][SearchPath];
+      var searchPathArr := SearchPath.Split([';']);
+      for var I := 0 to Length(searchPathArr)-2 do begin
+        var pathh := searchPathArr[I];
+        pathh := CalcPath(pathh, ProjFile);
+        pathh := GetRelativeLink(dprPath, pathh);
+        searchPathArr[I] := pathh;
+      end;
+      dprojF.GenerateBasicDProj(dprojPath, guid.ToString, dprPath, string.Join(';' ,searchPathArr));
+    end else begin
+      dprojF.GenerateBasicDProj(dprojPath, guid.ToString, dprPath, '');
+    end;
+  end else begin
+     if Dpr <> nil then begin
+      self.UpdateDPR(Dpr.Path);
+      Dpr.Update;
+      Dpr.AssociatedFile.Update;
+    end;
+
+    if Dproj <> nil then begin
+      DprojFile.ReLinkSearchPathTo(Dproj.Path);
+      Dproj.Update;
+      Dproj.AssociatedFile.Update;
+    end;
   end;
 
   UpdatedFiles.Clear;
@@ -579,23 +700,70 @@ begin
 end;
 
 begin
+{
+  .dproj, .dpr, .dpk
+    - Seed File
+    - GroupProj File
+    - Target Dir
+
+  .pas
+    - Seed File,
+    - Dproj File  -- Для настройки парсинга
+    - Target Dir
+
+  .pas
+    - Seed File,
+    -
+}
+//  SeedFile := 'C:\Source\SprutCAM\NCKernel\NCKernel.dpr';
+  SeedFile := 'C:\Source\SprutCAM\SprutCAM40\ComputingPart\Technology\Operations\Uni5DOp.pas';
+//  SeedFile := 'C:\Source\SprutCAM\GECAD\geCADDef.pas';
+  TargetPath := 'C:\TestSource\';
+//  ProjFile := 'C:\Source\SprutCAM\GECAD\AVOCADO.dproj';
+//  GroupProjFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
+
+  SearchDir :=  'C:\Source\SprutCAM';
+
+
   // Этап 0: Обратока входных параметров
+  var Extension := ExtractFileExt(SeedFile);//ExtractFileExt(ParamStr(1));
+  IsPasFile := False;
+          if SameText(Extension, '.pas') then
+            IsPasFile := True;
+
+
   if ParamCount = 3 then begin
     for var I := 1 to ParamCount do begin
       case I of
         1: begin
-          SearchPath := ParamStr(I);
-          if not DirectoryExists(SearchPath) then begin
-            Writeln('Директроии "' + ParamStr(I) + '" не существует');
+          SeedFile := ParamStr(I);
+
+          IsPasFile := False;
+          if SameText(Extension, '.pas') then
+            IsPasFile := True;
+
+          if not FileExists(ParamStr(I)) then begin
+            Writeln('Файла "' + ParamStr(I) + '" не существует');
+            ReadLn;
             exit;
           end;
         end;
 
         2: begin
-          SeedFile := ParamStr(I);
-          if not FileExists(ParamStr(I)) then begin
-            Writeln('Файла "' + ParamStr(I) + '" не существует');
-            exit;
+          if SameText(Extension, '.groupproj') then begin
+            GroupProjFile := ParamStr(I);
+            if not FileExists(ParamStr(I)) then begin
+              Writeln('Файла "' + ParamStr(I) + '" не существует');
+              ReadLn;
+              exit;
+            end;
+          end else if SameTExt(Extension, '.dproj') And IsPasFile then begin
+            ProjFile := ParamStr(I);
+            if not FileExists(ParamStr(I)) then begin
+              Writeln('Файла "' + ParamStr(I) + '" не существует');
+              ReadLn;
+              exit;
+            end;
           end;
         end;
 
@@ -614,12 +782,21 @@ begin
 
   var Scanner := TScanner.Create;
 
-  if SeedFile.EndsWith('.dproj') then begin
+  if SameText(Extension, '.dproj') then begin
     DprojFile := TDprojFile.Create(SeedFile);
     Scanner.LoadSettings(DprojFile);
-  end else begin
-    Scanner.FindFilesInFolder(GetDownPath(ProjGroupFile));
-  end;
+  end else if SameText(Extension, '.dpr') OR SameText(Extension, '.dpk') then begin
+    var dproj := StringReplace(SeedFile, Extension, '.dproj', [rfIgnoreCase]);
+    DprojFile := TDprojFile.Create(dproj);
+    Scanner.LoadSettings(DprojFile);
+  end else if SameText(Extension, '.pas') then begin
+    if not ProjFile.IsEmpty then begin
+      DprojFile := TDprojFile.Create(ProjFile);
+      Scanner.LoadSettings(DprojFile);
+    end else
+      Scanner.FindFilesInFolder(SearchDir);
+  end else
+    raise Exception.Create('Файл ' + SeedFile + ' имееет недопустимое расширение');
 
   var Syncronizer := TSyncronizer.Create;
 
@@ -629,10 +806,12 @@ begin
       // 1 Этап: Парсинг
       stParsing: begin
         Writeln('Начало сканирования.....');
-        if DprojFile <> nil then
+
+        if SameText(Extension, '.dproj') OR SameText(Extension, '.dpr') OR SameText(Extension, '.dpk') then
           Scanner.Scan(DprojFile)
-        else
+        else if SameText(Extension, '.pas') then
           Scanner.Scan(SeedFile);
+
         Writeln('Конец Сканироания...');
         Writeln('Просканировано - ' + SeedFiles.GetCount.ToString + ' файлов.');
         Step := stCoping;
@@ -666,7 +845,8 @@ begin
           end;
         end;
 
-        Syncronizer.Syncronize;
+        if UpdatedFiles.GetCount > 0 then
+          Syncronizer.Syncronize;
 
       end;
 

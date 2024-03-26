@@ -3,7 +3,7 @@ unit Dproj;
 interface
 
 uses
-  Winapi.Windows,
+  Winapi.Windows, Registry,
 
   System.SysUtils, System.Variants, System.Classes, System.StrUtils, System.TypInfo,
   System.Types, System.IOUtils, ActiveX,
@@ -11,6 +11,60 @@ uses
   DSUtils, DSTypes,
 
   XMLDoc, XMLIntf;
+
+const
+  DprojText =
+  '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">'       + #13#10 +
+  '<PropertyGroup>'                                                             + #13#10 +
+  '<ProjectGuid>%s</ProjectGuid>'                                               + #13#10 +
+  '<ProjectVersion>19.5</ProjectVersion>'                                       + #13#10 +
+  '<FrameworkType>None</FrameworkType>'                                         + #13#10 +
+  '<Base>True</Base>'                                                           + #13#10 +
+  '<Config Condition="''$(Config)''==''''">Debug</Config>'                      + #13#10 +
+  '<Platform Condition="''$(Platform)''==''''">Win64</Platform>'                + #13#10 +
+  '<TargetedPlatforms>3</TargetedPlatforms>'                                    + #13#10 +
+  '<MainSource>%s</MainSource>'                                                 + #13#10 +
+  '</PropertyGroup>'                                                            + #13#10 +
+
+
+  '<PropertyGroup Condition="''$(Config)''==''Base'' or ''$(Base)''!=''''">'    + #13#10 +
+  '<Base>true</Base>'                                                           + #13#10 +
+  '</PropertyGroup>'                                                            + #13#10 +
+  '<PropertyGroup Condition="(''$(Platform)''==''Win64'' and ''$(Base)''==''true'') or ''$(Base_Win64)''!=''''">'   + #13#10 +
+  '<Base_Win64>true</Base_Win64>'                                               + #13#10 +
+  '<CfgParent>Base</CfgParent>'                                                 + #13#10 +
+  '<Base>true</Base>'                                                           + #13#10 +
+  '</PropertyGroup>'                                                            + #13#10 +
+  '<PropertyGroup Condition="''$(Config)''==''Release'' or ''$(Cfg_1)''!=''''">'   + #13#10 +
+  '<Cfg_1>true</Cfg_1>'                                                         + #13#10 +
+  '<CfgParent>Base</CfgParent>'                                                 + #13#10 +
+  '<Base>true</Base>'                                                           + #13#10 +
+  '</PropertyGroup> '                                                           + #13#10 +
+  '<PropertyGroup Condition="(''$(Platform)''==''Win64'' and ''$(Cfg_1)''==''true'') or ''$(Cfg_1_Win64)''!=''''">'     + #13#10 +
+  '<Cfg_1_Win64>true</Cfg_1_Win64> '                                            + #13#10 +
+  '<CfgParent>Cfg_1</CfgParent>'                                                + #13#10 +
+  '<Cfg_1>true</Cfg_1> '                                                        + #13#10 +
+  '<Base>true</Base>'                                                           + #13#10 +
+  '</PropertyGroup> '                                                            + #13#10 +
+  '<PropertyGroup Condition="''$(Config)''==''Debug'' or ''$(Cfg_2)''!=''''"> '    + #13#10 +
+  '<Cfg_2>true</Cfg_2>  '                                                       + #13#10 +
+  '<CfgParent>Base</CfgParent>'                                                 + #13#10 +
+  '<Base>true</Base> '                                                          + #13#10 +
+  '</PropertyGroup>'                                                            + #13#10 +
+  '<PropertyGroup Condition="(''$(Platform)''==''Win64'' and ''$(Cfg_2)''==''true'') or ''$(Cfg_2_Win64)''!=''''"> '   + #13#10 +
+  '<Cfg_2_Win64>true</Cfg_2_Win64> '                                            + #13#10 +
+  '<CfgParent>Cfg_2</CfgParent>'                                                + #13#10 +
+  '<Cfg_2>true</Cfg_2>  '                                                       + #13#10 +
+  '<Base>true</Base> '                                                          + #13#10 +
+  '</PropertyGroup> '                                                           + #13#10 +
+
+
+  '<PropertyGroup Condition="''$(Base)''!=''''">'                               + #13#10 +
+  '<DCC_UnitSearchPath>%s</DCC_UnitSearchPath>'                                 + #13#10 +
+  '<DCC_Define>%s</DCC_Define>'                                                 + #13#10 +
+  '</PropertyGroup>'                                                            + #13#10 +
+
+  '</Project>'                                                                  ;
 
 type
   TDprojFile = class
@@ -36,6 +90,8 @@ type
     function GetDebuggerFiles(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): TArray<string>;
     procedure ReLinkSearchPathTo(const NewLink: string);
     property FilePath: string read FFilePath;
+
+    procedure GenerateBasicDProj(const ProjectName, ProjectGUID, DPRFileName, SearchPath: string);
   end;
 
 implementation
@@ -67,6 +123,15 @@ end;
 destructor TDprojFile.Destroy;
 begin
   FXMLDoc := nil;
+end;
+
+procedure TDprojFile.GenerateBasicDProj(const ProjectName, ProjectGUID, DPRFileName, SearchPath: string);
+var
+  sl: TStringList;
+begin
+  sl := TStringList.Create;
+  sl.Add(Format(DprojText, [ProjectGUID, ExtractFileName(DPRFileName), SearchPath, '']));
+  sl.SaveToFile(ProjectName);
 end;
 
 procedure TDprojFile.GetConfigAndPlatformByCondition(const Condition: string;
@@ -279,6 +344,11 @@ begin
 //        PropertyGroupNode.ChildNodes[SettingsFieldsStr[SearchPath]].Text := string.Join(';', spArr);
           PropertyGroupNode.ChildNodes[SettingsFieldsStr[SearchPath]].NodeValue := string.Join(';', spArr);
         end;
+      end else if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[Debugger_HostApplication]) <> nil then begin
+         var Text := PropertyGroupNode.ChildNodes[SettingsFieldsStr[Debugger_HostApplication]].Text;
+         var path := CalcPath(Text, FFilePath);
+         var newBug := GetRelativeLink(NewLink, path);
+         PropertyGroupNode.ChildNodes[SettingsFieldsStr[Debugger_HostApplication]].NodeValue := GetRelativeLink(NewLink, path);
       end;
     end;
     PropertyGroupNode := PropertyGroupNode.NextSibling;
