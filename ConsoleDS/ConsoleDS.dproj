@@ -104,10 +104,11 @@
         <DCCReference Include="..\DUDS\Duds.Common.Strings.pas"/>
         <DCCReference Include="..\DUDS\Duds.Common.Types.pas"/>
         <DCCReference Include="..\DUDS\Duds.Common.Utils.pas"/>
-        <DCCReference Include="..\Utils\Dproj.pas"/>
         <DCCReference Include="..\Utils\DSTypes.pas"/>
         <DCCReference Include="..\Utils\DSUtils.pas"/>
-        <DCCReference Include="..\Utils\DprojStructure.pas"/>
+        <DCCReference Include="..\Utils\FileClass.pas">
+            <Form>/  Dproj in &apos;..\Utils\Dproj.pas&apos;;</Form>
+        </DCCReference>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

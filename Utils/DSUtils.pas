@@ -10,26 +10,30 @@ uses
   System.SysUtils, System.StrUtils, System.Math, System.Classes, System.IOUtils,
   System.Types, System.Generics.Collections,
 
-  DSTypes,
-
   XMLDoc, XMLIntf;
 
-  // Dialogs
-//  function OpenDialog(out Path: string; PickFolder: Boolean = False; const FileType: string = ''): Boolean;
-//  function SaveDialog(out Path: string; const FileType: string = ''; DefaultName: string = ''): Boolean;
+type
+  TFileType =
+  (
+    ftPas,
+    ftDproj,
+    ftDpr,
+    ftDpk,
+    ftUndefined
+  );
 
   // Path opertaion
   function ExtractFileNameWithoutExt(const fn: string): string;
   function ExtractCommonPrefix(const path1, path2: string): string;             overload;
   function ExtractCommonPrefix(list: TListBox): string;                         overload;
   function ExtractCommonPrefix(list: TStringList): string;                      overload;
-  function ExtractCommonPrefix(list: array of TFile): string;                   overload;
-  function ExtractCommonPrefix(list: TFileArray): string;                       overload;
+//  function ExtractCommonPrefix(list: array of TFile): string;                   overload;
+//  function ExtractCommonPrefix(list: TFileArray): string;                       overload;
   function GetRelativeLink(const FromFile, ToFile: string): string;
   function CalcPath(RelPath: string; AbsPath: string): string;
 
-  function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
-  function InsertProjectName(const Path: string; const ProjectName: string): string;
+//  function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
+//  function InsertProjectName(const Path: string; const ProjectName: string): string;
 
   function GetDownPath(const path: string): string;
 
@@ -50,6 +54,8 @@ uses
 
   // GroupProj file operation
   function ParseUsedProject(const GroupProjFile: string): TDictionary<string, string>;
+
+  function GetFileType(const FilePath: string): TFileType;
 
 implementation
 
@@ -150,29 +156,29 @@ begin
   end;
 end;
 
-function ExtractCommonPrefix(list: array of TFile): string;
-begin
-  result := '';
-  for var Value in list do begin
-    if result.IsEmpty then begin
-      result := Value.Path;
-    end else begin
-      result := ExtractCommonPrefix(result, Value.Path);
-    end;
-  end;
-end;
+//function ExtractCommonPrefix(list: array of TFile): string;
+//begin
+//  result := '';
+//  for var Value in list do begin
+//    if result.IsEmpty then begin
+//      result := Value.Path;
+//    end else begin
+//      result := ExtractCommonPrefix(result, Value.Path);
+//    end;
+//  end;
+//end;
 
-function ExtractCommonPrefix(list: TFileArray): string;
-begin
-  result := '';
-  for var I := 0 to List.GetCount - 1 do begin
-    if result.IsEmpty then begin
-      result := List[I].Path;
-    end else begin
-      result := ExtractCommonPrefix(result, List[I].Path);
-    end;
-  end;
-end;
+//function ExtractCommonPrefix(list: TFileArray): string;
+//begin
+//  result := '';
+//  for var I := 0 to List.GetCount - 1 do begin
+//    if result.IsEmpty then begin
+//      result := List[I].Path;
+//    end else begin
+//      result := ExtractCommonPrefix(result, List[I].Path);
+//    end;
+//  end;
+//end;
 
 function GetRelativeLink(const FromFile, ToFile: string): string;
 /// Формирует относительный путь от FromFile до ToFile
@@ -220,11 +226,11 @@ begin
   result := string.Join(PathDelim, Path1Parts);
 end;
 
-function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
-/// Заменяет ${Platform} на имя текущей платформы
-begin
-  result := StringReplace(Path, '$(Platform)', PlatType.GetPlatformAsStr, [rfReplaceAll, rfIgnoreCase]);
-end;
+//function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
+///// Заменяет ${Platform} на имя текущей платформы
+//begin
+//  result := StringReplace(Path, '$(Platform)', PlatType.GetPlatformAsStr, [rfReplaceAll, rfIgnoreCase]);
+//end;
 
 function InsertProjectName(const Path: string; const ProjectName: string): string;
 /// Заменяет $(MSBuildProjectName) на имя текущей платформы
@@ -405,6 +411,24 @@ begin
     XMLDoc := nil;
   end;
 
+end;
+
+function GetFileType(const FilePath: string): TFileType;
+var
+  Extension: string;
+begin
+  result := ftUndefined;
+  if not FilePath.IsEmpty then begin
+    Extension := ExtractFileExt(FilePath);
+    if SameText(Extension, '.dproj') then
+      result := ftDproj
+    else if SameText(Extension, '.dpr') then
+      result := ftDpr
+    else if SameText(Extension, '.dpk') then
+      result := ftDpk
+    else if SameText(Extension, '.pas') then
+      result := ftPas
+  end;
 end;
 
 end.

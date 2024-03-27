@@ -225,8 +225,8 @@ end;
 function TDprojFile.GetOutput(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
 begin
   var output := self.ConfigSettings[PlatformTyp][ConfigTyp][DcuOutput];
-  output := InsertPlatformPath(output, self.MainSettings.FPlatform);
-  output := InsertProjectName(output, ExtractFileNameWithoutExt(self.FFilePath));
+//  output := InsertPlatformPath(output, self.MainSettings.FPlatform);
+//  output := InsertProjectName(output, ExtractFileNameWithoutExt(self.FFilePath));
   result := CalcPath(output, self.FFilePath);
 end;
 
@@ -324,6 +324,7 @@ end;
 procedure TDprojFile.ReLinkSearchPathTo(const NewLink: string);
 var
   RootNode, PropertyGroupNode, ItemGroupNode: IXMLNode;
+  ResourcePath: string;
 begin
   RootNode := FXMLDoc.DocumentElement;
 
@@ -331,6 +332,7 @@ begin
 
   while Assigned(PropertyGroupNode) do begin
     if PropertyGroupNode.AttributeNodes.Count <> 0 then begin
+
       if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[SearchPath]) <> nil then begin
         var Text := PropertyGroupNode.ChildNodes[SettingsFieldsStr[SearchPath]].Text;
         if not Text.IsEmpty then begin
@@ -344,15 +346,44 @@ begin
 //        PropertyGroupNode.ChildNodes[SettingsFieldsStr[SearchPath]].Text := string.Join(';', spArr);
           PropertyGroupNode.ChildNodes[SettingsFieldsStr[SearchPath]].NodeValue := string.Join(';', spArr);
         end;
-      end else if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[Debugger_HostApplication]) <> nil then begin
+      end;
+
+      if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[Debugger_HostApplication]) <> nil then begin
          var Text := PropertyGroupNode.ChildNodes[SettingsFieldsStr[Debugger_HostApplication]].Text;
          var path := CalcPath(Text, FFilePath);
          var newBug := GetRelativeLink(NewLink, path);
          PropertyGroupNode.ChildNodes[SettingsFieldsStr[Debugger_HostApplication]].NodeValue := GetRelativeLink(NewLink, path);
       end;
+      if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[ResourceOutputPath]) <> nil then begin
+        var Text := PropertyGroupNode.ChildNodes[SettingsFieldsStr[ResourceOutputPath]].Text;
+        var path := CalcPath(Text, FFilePath);
+        ResourcePath := GetRelativeLink(NewLink, path);
+        PropertyGroupNode.ChildNodes[SettingsFieldsStr[ResourceOutputPath]].NodeValue := GetRelativeLink(NewLink, path);
+      end;
+
     end;
     PropertyGroupNode := PropertyGroupNode.NextSibling;
   end;
+
+  ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
+  if Assigned(ItemGroupNode) then begin
+    for var I := 0 to ItemGroupNode.ChildNodes.Count-1 do begin
+      var node := ItemGroupNode.ChildNodes.Get(I);
+      // Парсим ресурсы
+        if node.LocalName = 'RcCompile' then begin
+          var rcPath: string :=  node.Attributes['Include'];
+          var rcPathParts := rcPath.split(['\']);
+          var path := ResourcePath + '\' + rcPathParts[Length(rcPathParts)-1];
+          node.Attributes['Include'] := path;
+
+//          if node.ChildNodes['Form'] <> nil then begin
+//            var OutPath := self.ConfigSettings[All][Base][ResourceOutputPath];
+//            self.FResources := self.FResources + [OutPath + '\' + node.ChildNodes['Form'].NodeValue];
+//          end;
+        end;
+    end;
+  end;
+
 //  FXMLDoc.Refresh;
   FXMLDoc.SaveToFile(NewLink);
 end;

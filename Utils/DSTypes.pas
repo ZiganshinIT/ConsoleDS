@@ -3,9 +3,13 @@ unit DSTypes;
 interface
 
 uses
-  System.SysUtils, System.TypInfo;
+  System.SysUtils, System.TypInfo, System.Classes,
+
+  DSUtils;
 
 type
+
+  
 
   TFile = class
   private
@@ -48,11 +52,19 @@ type
 
   TDPRFile = class
   private
+    FName: string;
     FPath: string;
+    FStrings: TStringList;
   public
+    constructor Create(const Path: string);
+    procedure LoadBaseStructure;
+    procedure LoadStructureFrom(const DPRPath: string);
+    procedure UpdateUses(const UsedFiles: TStringList);
+    procedure SaveToFile(const Path: string);
 //    constructor Create(const FilePath: string);                                 overload;
 //    constructor Create(const F: TFile);                                         overload;
 //    procedure UpdateUses
+    destructor Destroy;
   end;
 
 
@@ -98,6 +110,7 @@ type
 
   end;
 
+type
   TSettingsFields =
   (
     SearchPath,
@@ -108,18 +121,19 @@ type
     Debugger_HostApplication
   );
 
-  TConfigSettings = array [TPlatformEnum, TConfigEnum, TSettingsFields] of string;
-
 const
   SettingsFieldsStr: array[TSettingsFields] of string =
   (
-    'DCC_UnitSearchPath',
-    'Debugger_DebugSourcePath',
-    'DCC_Define',
-    'BRCC_OutputDir',
-    'DCC_DcuOutput',
-    'Debugger_HostApplication'
+    'DCC_UnitSearchPath',                         // Search Path Fields
+    'Debugger_DebugSourcePath',                   // Debugger Path Fileds
+    'DCC_Define',                                 // Defines
+    'BRCC_OutputDir',                             // Resources Prefix
+    'DCC_DcuOutput',                              // DCU Output Path
+    'Debugger_HostApplication'                    // EXE location
   );
+
+type
+  TConfigSettings = array [TPlatformEnum, TConfigEnum, TSettingsFields] of string;
 
 implementation
 
@@ -273,6 +287,107 @@ end;
 procedure TFileArray.SetItem(Index: Integer; Value: TFile);
 begin
   FArr[Index] := Value;
+end;
+
+{ TDPRFile }
+
+constructor TDPRFile.Create(const Path: string);
+begin
+  FStrings := TStringList.Create;
+  FPath := Path;
+  FName := StringReplace(ExtractFileName(FPath), ExtractFileExt(FPath), '', [rfIgnoreCase]);
+end;
+
+destructor TDPRFile.Destroy;
+begin
+  FreeAndNil(FStrings);
+end;
+
+procedure TDPRFile.LoadBaseStructure;
+
+  procedure AddLine(const Text: string = '');
+  begin
+    FStrings.Add(Text + #13#10);
+  end;
+
+begin
+  AddLine('program ' + FName + ';');
+  AddLine('uses');
+  AddLine('begin');
+  AddLine('end.');
+end;
+
+procedure TDPRFile.LoadStructureFrom(const DPRPath: string);
+var
+  Source: TStringList;
+  Line: Integer;
+begin
+  Source := TStringList.Create;
+  Source.LoadFromFile(DPRPath);
+
+  Line := 0;
+  while Line < Source.Count do begin
+    var Text := Source.Strings[Line];
+    FStrings.Add(Text);
+    Inc(Line);
+  end;
+
+end;
+
+procedure TDPRFile.SaveToFile(const Path: string);
+begin
+  FStrings.SaveToFile(Path);
+end;
+
+procedure TDPRFile.UpdateUses(const UsedFiles: TStringList);
+const
+  DoubleSpace = '  ';
+var
+  Line: Integer;
+  NewList: TStringList;
+begin
+  NewList := TStringList.Create;
+
+  Line := 0;
+  while Line < FStrings.Count do begin
+    var Text := FStrings.Strings[Line];
+    if SameText(Text, 'uses') then begin
+      NewList.Add(Text);
+      {Пропускаем содержимое uses}
+      while (not Text.Contains(';')) AND (Line < FStrings.Count) do begin
+        Inc(Line);
+        Text := FStrings[Line];
+      end;
+      {Заполняем uses}
+      UsedFiles.Sort;
+
+
+      for var Index := 0 to Pred(UsedFiles.Count) do begin
+        var un: string;
+        var F := UsedFiles[Index];
+
+        if SameText(ExtractFilePath(F), '') then begin
+          un := F;
+        end else if SameText(ExtractFileExt(F), '.pas')  then begin
+          var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
+          un := Name + ' in ' + GetRelativeLink(FPath, F);
+        end else
+          continue;
+
+        if  Index < Pred(UsedFiles.Count) then
+          un := DoubleSpace + un + ','
+        else
+          un := DoubleSpace + un + ';';
+
+        NewList.Add(un);
+      end;
+    end else begin
+      NewList.Add(Text);
+      Inc(Line);
+    end;
+  end;
+  FreeAndNil(FStrings);
+  FStrings := NewList;
 end;
 
 end.
