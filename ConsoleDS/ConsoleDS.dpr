@@ -107,6 +107,7 @@ var
   FileType: TFileType;
 
   DprojFile: TDprojFile;
+  DprFile: TDprFile;
 
   // Threads
   InputThread: TInputThread;
@@ -390,7 +391,7 @@ procedure TScanner.LoadSettings(const DprojFile: TDprojFile);
 begin
    { Добавляет доступные define проекта }
     FPascalUnitExtractor.DefineAnalizator.EnableDefines := DprojFile.GetDefinies([All, Win64], [Base, Cfg_2]);
-
+    FPascalUnitExtractor.DefineAnalizator.EnableDefines := FPascalUnitExtractor.DefineAnalizator.EnableDefines + ['MSWINDOWS'];
 
    {Формируем массив файлов, которые нужно проигнорировать}
    AddIngoreFilesFromResource;
@@ -470,12 +471,11 @@ begin
 
   {ConsoleDC.exe SeedFile, TargetDir, GroupProject|SearchPath, WithCopy (Flag)};
 
-//  SeedFile := 'C:\Source\SprutCAM\SCKernelConsole\main\SCKernelConsole.dpr';
-//  SeedFile := 'C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dpr';
-  SeedFile := 'C:\Source\SprutCAM\NCKernel\NCKernel.dpr';
-  TargetPath := 'C:\TestSource\';
-  GroupProjFile := 'C:\Source\SprutCAM\SprutCAM.groupproj';
-  //ProjFile := 'C:\Source\SprutCAM\NCKernel\NCKernel.dproj';
+
+
+  SeedFile := ParamStr(1);
+  TargetPath := ParamStr(2);
+  GroupProjFile := ParamStr(3);
   WithCopy := False;
 
   // Этап 0: Обратока входных параметров
@@ -493,6 +493,11 @@ begin
     ftDproj: begin
       DprojFile := TDprojFile.Create(SeedFile);
       Scanner.LoadSettings(DprojFile);
+      var Dpr := StringReplace(SeedFile, '.dproj', '.dpr', [rfIgnoreCase]);
+      if FileExists(Dpr) then
+        DprFile := TDprFile.Create(Dpr)
+      else
+        Raise Exception.Create('Ошибка');
     end;
     ftDpr: begin
       var DprojPath := StringReplace(SeedFile, '.dpr', '.dproj', [rfIgnoreCase]);
@@ -500,6 +505,7 @@ begin
         DprojFile := TDprojFile.Create(DprojPath);
         Scanner.LoadSettings(DprojFile);
       end;
+      DprFile := TDprFile.Create(SeedFile);
     end;
     ftPas: begin
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
@@ -529,49 +535,13 @@ begin
 
         end else begin
           var NewDprojPath := TargetPath + ExtractFileNameWithoutExt(SeedFile) + '.dproj';
+          var New := DprojFile.CreateCopy(NewDprojPath);
 
-
-
-              var spArr := DprojFile.GetSearchPath(All, Base);
-              for var I := 0 to Length(spArr)-1 do begin
-                var spPath := CalcPath(spArr[I], DprojFile.Path);
-                spArr[I] := GetRelativeLink(NewDprojPath, spPath);
-              end;
-
-              DprojFile.SetSearchPath(All, Base, spArr);
-
-              for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
-            for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
-
-              var HA := DprojFile.GetHostApplication(pe, ce);
-              HA := CalcPath(HA, SeedFile);
-              DprojFile.SetHostApplication(pe, ce, GetRelativeLink(NewDprojPath, HA));
-
-            end;
-          end;
-
-              var Prefix := DprojFile.ConfigSettings[All][Base][ResourceOutputPath];
-              var ResArr := DprojFile.Resources;
-              for var I := 0 to Length(ResArr)-1 do begin
-                // Include
-                var Include := CalcPath(ResArr[I].Include, DprojFile.Path);
-                ResArr[I].Include := GetRelativeLink(NewDprojPath, Include);
-                //Form
-                if not ResArr[I].Form.Contains(Prefix) then
-                  ResArr[I].Form := Prefix + '\' + ResArr[I].Form;
-                var Form := CalcPath(ResArr[I].Form, DprojFile.Path);
-                ResArr[I].Form := GetRelativeLink(NewDprojPath, Form);
-
-              end;
-
-
-
-          DprojFile.Refresh;
-          DprojFile.SaveFile(NewDprojPath);
+          New.SaveFile(NewDprojPath);
 
           var DPR := TDPRFile.Create(TargetPath + ExtractFileNameWithoutExt(SeedFile) + '.dpr');
-          DPR.LoadStructure(SeedFile);
-          DPR.Assign(TDprojFile.Create(NewDprojPath));
+          DPR.LoadStructure(DprFile);
+          DPR.Assign(New);
           DPR.UpdateResources(DprojFile);
           DPR.UpdateUses(DetectedUnits);
           DPR.SaveFile;

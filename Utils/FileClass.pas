@@ -56,9 +56,11 @@ type
     procedure ParseCondition(const Condition: string;
       out PlatformType: TPlatformEnum;
       out Config: TConfigEnum);
+    function CreateNew(const FilePath: string): TDprojFile;
   protected
     // Item Group
     FResources: TArray<TResource>;
+    procedure RelinkAll(const Dest: TDprojFile);
   public
     // Property Groups
     MainSettings: TMainSettings;
@@ -78,6 +80,8 @@ type
     // Save\Load Operations
     procedure LoadFromFile(const Path: string);
     procedure SaveFile(const FilePath: string);
+
+    function CreateCopy(const FilePath: string): TDprojFile;
 
     procedure Refresh;
 
@@ -112,7 +116,8 @@ type
     constructor Create(const Path: string);
 
     procedure BuildBaseStructure;
-    procedure LoadStructure(const Path: string);
+    procedure LoadStructure(const Path: string);                                overload;
+    procedure LoadStructure(const DprFile: TDprFile);                           overload;
 
     procedure UpdateResources(const OldDprojFile: TDprojFile);
     procedure UpdateUses(const List: TStringList);
@@ -120,6 +125,8 @@ type
     procedure SaveFile;
 
     procedure Assign(const DprojFile: TDprojFile);
+
+    property Path: string read FPath;
 
     destructor Destroy;
   end;
@@ -160,6 +167,11 @@ begin
   FreeAndNil(FStrings);
 end;
 
+procedure TDprFile.LoadStructure(const DprFile: TDprFile);
+begin
+  self.LoadStructure(DprFile.FPath);
+end;
+
 procedure TDprFile.LoadStructure(const Path: string);
 var
   Source: TStringList;
@@ -179,8 +191,6 @@ procedure TDprFile.SaveFile;
 begin
   FStrings.SaveToFile(FPath);
 end;
-
-
 
 procedure TDprFile.UpdateResources(const OldDprojFile: TDprojFile);
 
@@ -208,14 +218,14 @@ begin
             if ContainsText(res, '.'+Extension) then begin
               var OriginalName := res;
 
-              var Prefix := OldDprojFile.ConfigSettings[All][Base][ResourceOutputPath];
+              var Prefix := FDprojFile.ConfigSettings[All][Base][ResourceOutputPath];
               var NewPath: string;
               if not OriginalName.Contains(Prefix) AND Text.StartsWith('{$R') then begin
                 NewPath := Prefix + '\' + OriginalName;
               end else
                 NewPath := OriginalName;
 
-              var FilePath := CalcPath(NewPath, OldDprojFile.Path);
+              var FilePath := CalcPath(NewPath, ParamStr(1));
               var TextPath := GetRelativeLink(FPath, FilePath);
 
 
@@ -288,6 +298,23 @@ constructor TDprojFile.Create(const Path: string);
 begin
   FXMLDoc := TXMLDocument.Create(nil);
   self.LoadFromFile(Path);
+end;
+
+function TDprojFile.CreateCopy(const FilePath: string): TDprojFile;
+begin
+  result := TDprojFile.Create;
+  result.LoadFromFile(self.FPath);
+  result.FPath := FilePath;
+
+  self.RelinkAll(result);
+end;
+
+function TDprojFile.CreateNew(const FilePath: string): TDprojFile;
+begin
+  result := TDprojFile.Create;
+  result.LoadFromFile(self.FPath);
+  result.FPath := FilePath;
+
 end;
 
 constructor TDprojFile.Create;
@@ -531,6 +558,43 @@ begin
     PropertyGroupNode := PropertyGroupNode.NextSibling;
   end;
 
+end;
+
+procedure TDprojFile.RelinkAll(const Dest: TDprojFile);
+begin
+  var spArr := Dest.GetSearchPath(All, Base);
+        for var I := 0 to Length(spArr)-1 do begin
+          var spPath := CalcPath(spArr[I], self.Path);
+          spArr[I] := GetRelativeLink(Dest.Path, spPath);
+        end;
+
+        Dest.SetSearchPath(All, Base, spArr);
+
+        for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
+          for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
+
+          var HA := Dest.GetHostApplication(pe, ce);
+          HA := CalcPath(HA, self.FPath);
+          Dest.SetHostApplication(pe, ce, GetRelativeLink(Dest.Path, HA));
+
+          end;
+        end;
+
+      var Prefix := Dest.ConfigSettings[All][Base][ResourceOutputPath];
+      var ResArr := Dest.Resources;
+      for var I := 0 to Length(ResArr)-1 do begin
+        // Include
+        var Include := CalcPath(ResArr[I].Include, self.Path);
+        ResArr[I].Include := GetRelativeLink(Dest.Path, Include);
+        //Form
+        if not ResArr[I].Form.Contains(Prefix) then
+          ResArr[I].Form := Prefix + '\' + ResArr[I].Form;
+        var Form := CalcPath(ResArr[I].Form, self.Path);
+        ResArr[I].Form := GetRelativeLink(Dest.Path, Form);
+
+      end;
+
+    Dest.Refresh;
 end;
 
 procedure TDprojFile.SaveFile(const FilePath: string);
