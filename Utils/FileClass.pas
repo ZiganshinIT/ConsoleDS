@@ -57,7 +57,6 @@ type
     procedure ParseCondition(const Condition: string;
       out PlatformType: TPlatformEnum;
       out Config: TConfigEnum);
-    function CreateNew(const FilePath: string): TDprojFile;
   protected
     // Item Group
     FResources: TArray<TResource>;
@@ -80,7 +79,7 @@ type
 
     // Save\Load Operations
     procedure LoadFromFile(const Path: string);
-    procedure SaveFile(const FilePath: string);
+    procedure SaveFile;
 
     function CreateCopy(const FilePath: string): TDprojFile;
 
@@ -150,6 +149,8 @@ procedure TDprFile.BuildBaseStructure;
   end;
 
 begin
+  FStrings.Clear;
+
   AddLine('program ' + FName + ';');
   AddLine('uses');
   AddLine(';');
@@ -179,6 +180,8 @@ var
   Source: TStringList;
   Line: Integer;
 begin
+  FStrings.Clear;
+
   Source := TStringList.Create;
   Source.LoadFromFile(Path);
   Line := 0;
@@ -309,14 +312,6 @@ begin
   result.FPath := FilePath;
 
   self.RelinkAll(result);
-end;
-
-function TDprojFile.CreateNew(const FilePath: string): TDprojFile;
-begin
-  result := TDprojFile.Create;
-  result.LoadFromFile(self.FPath);
-  result.FPath := FilePath;
-
 end;
 
 constructor TDprojFile.Create;
@@ -459,6 +454,11 @@ begin
 
 end;
 
+{
+  Принимает на вход условия из строки Dproj файла:
+    <PropertyGroup Condition="'$(Base_Win32)'!=''">
+  Возвращет конфигурацию и платофрму из условия
+}
 procedure TDprojFile.ParseCondition(const Condition: string;
   out PlatformType: TPlatformEnum; out Config: TConfigEnum);
 var
@@ -566,8 +566,11 @@ begin
 
 end;
 
+
+{Обноляет найстройки под новый файл. Обновляет пути и т.д}
 procedure TDprojFile.RelinkAll(const Dest: TDprojFile);
 begin
+  Dest.MainSettings.FConfig.SetConfig(Cfg_1);
   Dest.MainSettings.FMainSource := ExtractFileNameWithoutExt(Dest.FPath) + '.dpr';
 
   var spArr := Dest.GetSearchPath(All, Base);
@@ -605,10 +608,10 @@ begin
     Dest.Refresh;
 end;
 
-procedure TDprojFile.SaveFile(const FilePath: string);
+procedure TDprojFile.SaveFile;
 begin
-  ForceDirectories(GetDownPath(FilePath));
-  FXMLDoc.SaveToFile(FilePath);
+  ForceDirectories(GetDownPath(self.FPath));
+  FXMLDoc.SaveToFile(self.FPath);
 
 end;
 

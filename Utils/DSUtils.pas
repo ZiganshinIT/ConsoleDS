@@ -27,13 +27,8 @@ type
   function ExtractCommonPrefix(const path1, path2: string): string;             overload;
   function ExtractCommonPrefix(list: TListBox): string;                         overload;
   function ExtractCommonPrefix(list: TStringList): string;                      overload;
-//  function ExtractCommonPrefix(list: array of TFile): string;                   overload;
-//  function ExtractCommonPrefix(list: TFileArray): string;                       overload;
   function GetRelativeLink(const FromFile, ToFile: string): string;
   function CalcPath(RelPath: string; AbsPath: string): string;
-
-//  function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
-//  function InsertProjectName(const Path: string; const ProjectName: string): string;
 
   function GetDownPath(const path: string): string;
 
@@ -160,30 +155,6 @@ begin
   end;
 end;
 
-//function ExtractCommonPrefix(list: array of TFile): string;
-//begin
-//  result := '';
-//  for var Value in list do begin
-//    if result.IsEmpty then begin
-//      result := Value.Path;
-//    end else begin
-//      result := ExtractCommonPrefix(result, Value.Path);
-//    end;
-//  end;
-//end;
-
-//function ExtractCommonPrefix(list: TFileArray): string;
-//begin
-//  result := '';
-//  for var I := 0 to List.GetCount - 1 do begin
-//    if result.IsEmpty then begin
-//      result := List[I].Path;
-//    end else begin
-//      result := ExtractCommonPrefix(result, List[I].Path);
-//    end;
-//  end;
-//end;
-
 function GetRelativeLink(const FromFile, ToFile: string): string;
 /// Формирует относительный путь от FromFile до ToFile
 var
@@ -229,12 +200,6 @@ begin
 
   result := string.Join(PathDelim, Path1Parts);
 end;
-
-//function InsertPlatformPath(const Path: string; const PlatType: TPlatform): string;
-///// Заменяет ${Platform} на имя текущей платформы
-//begin
-//  result := StringReplace(Path, '$(Platform)', PlatType.GetPlatformAsStr, [rfReplaceAll, rfIgnoreCase]);
-//end;
 
 function InsertProjectName(const Path: string; const ProjectName: string): string;
 /// Заменяет $(MSBuildProjectName) на имя текущей платформы

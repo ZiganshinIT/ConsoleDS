@@ -39,6 +39,12 @@
         <CfgParent>Base</CfgParent>
         <Base>true</Base>
     </PropertyGroup>
+    <PropertyGroup Condition="('$(Platform)'=='Win32' and '$(Cfg_2)'=='true') or '$(Cfg_2_Win32)'!=''">
+        <Cfg_2_Win32>true</Cfg_2_Win32>
+        <CfgParent>Cfg_2</CfgParent>
+        <Cfg_2>true</Cfg_2>
+        <Base>true</Base>
+    </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
         <DCC_DcuOutput>.\$(Platform)\$(Config)</DCC_DcuOutput>
         <DCC_ExeOutput>.\$(Platform)\$(Config)</DCC_ExeOutput>
@@ -84,13 +90,19 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
         <Manifest_File>(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
-        <Debugger_RunParams>C:\Source\SprutCAM\NCKernel\GPS\GLib.pas C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
+        <Debugger_RunParams>C:\Source\SprutCAM\SCKernelConsole\main\SCKernelConsole.dpr C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
         <DCC_Define>RELEASE;$(DCC_Define)</DCC_Define>
         <DCC_SymbolReferenceInfo>0</DCC_SymbolReferenceInfo>
         <DCC_DebugInformation>0</DCC_DebugInformation>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(Cfg_2_Win32)'!=''">
+        <DCC_WriteableConstants>true</DCC_WriteableConstants>
+        <VerInfo_Locale>1033</VerInfo_Locale>
+        <Manifest_File>(None)</Manifest_File>
+        <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
     </PropertyGroup>
     <ItemGroup>
         <DelphiCompile Include="$(MainSource)">
@@ -107,9 +119,10 @@
         <DCCReference Include="..\DUDS\Duds.Common.Utils.pas"/>
         <DCCReference Include="..\Utils\DSTypes.pas"/>
         <DCCReference Include="..\Utils\DSUtils.pas"/>
-        <DCCReference Include="..\Utils\FileClass.pas">
-            <Form>/  Dproj in &apos;..\Utils\Dproj.pas&apos;;</Form>
-        </DCCReference>
+        <DCCReference Include="..\Utils\FileClass.pas"/>
+        <DCCReference Include="..\Utils\DSScanner.pas"/>
+        <DCCReference Include="..\Utils\DSThreads.pas"/>
+        <DCCReference Include="..\Utils\DSConst.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
@@ -152,6 +165,12 @@
                     </Platform>
                 </DeployFile>
                 <DeployFile LocalName="Win32\Debug\ConsoleDS.exe" Configuration="Debug" Class="ProjectOutput">
+                    <Platform Name="Win32">
+                        <RemoteName>ConsoleDS.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
+                <DeployFile LocalName="Win32\Release\ConsoleDS.exe" Configuration="Release" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>ConsoleDS.exe</RemoteName>
                         <Overwrite>true</Overwrite>
