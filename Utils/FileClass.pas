@@ -281,7 +281,7 @@ begin
           un := Name + ' in ''' + GetRelativeLink(FPath, F) + '''';
         end else if SameText(ExtractFileExt(F), '.dcu')  then begin
           var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
-        end;
+          un := Name;
         end else
           continue;
 

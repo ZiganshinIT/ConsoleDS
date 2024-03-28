@@ -289,11 +289,13 @@ begin
       var FoundFiles: TStringDynArray;
       var FileName: string;
 
-      FoundFiles := TDirectory.GetFiles(Path, '*.dcu', TSearchOption.soAllDirectories);
-      for FileName in FoundFiles do
-      begin
-        if not fDcuFiles.ContainsKey(ExtractFileName(FileName))then begin
-          fDcuFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+      if DirectoryExists(Path) then begin
+        FoundFiles := TDirectory.GetFiles(Path, '*.dcu', TSearchOption.soAllDirectories);
+        for FileName in FoundFiles do
+        begin
+          if not fDcuFiles.ContainsKey(ExtractFileName(FileName))then begin
+            fDcuFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+          end;
         end;
       end;
 

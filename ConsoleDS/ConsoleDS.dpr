@@ -28,7 +28,8 @@ uses
   FileClass in '..\Utils\FileClass.pas',
   DSScanner in '..\Utils\DSScanner.pas',
   DSThreads in '..\Utils\DSThreads.pas',
-  DSConst in '..\Utils\DSConst.pas';
+  DSConst in '..\Utils\DSConst.pas',
+  DSDprojStructure in '..\Utils\DSDprojStructure.pas';
 
 var
   {Параметры}
@@ -193,9 +194,11 @@ begin
 
   var Prefix := ExtractCommonPrefix(FileList);   // Вычисляем префикс исходный файлов
 
-  if WithCopy then begin
-    if FileType = ftPas then
+  if FileType = ftPas then
       FileList.Delete(0);
+
+  if WithCopy then begin
+
     for var Index := 0 to Pred(FileList.Count) do begin
       var F := FileList[Index];
       if ExtractFilePath(F) <> '' then begin
