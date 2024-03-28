@@ -57,6 +57,8 @@ type
 
   function GetFileType(const FilePath: string): TFileType;
 
+  function FindPasinGroupProj(const FilePath: string; const GroupProjFile: string): string;
+
 implementation
 
 { Dialogs }
@@ -148,10 +150,12 @@ function ExtractCommonPrefix(list: TStringList): string;
 begin
   result := '';
   for var Value in list do begin
-    if result.IsEmpty then begin
-      result := Value;
-    end else begin
-      result := ExtractCommonPrefix(result, Value);
+    if ExtractFilePath(Value) <> '' then begin
+      if result.IsEmpty then begin
+        result := Value;
+      end else begin
+        result := ExtractCommonPrefix(result, Value);
+      end;
     end;
   end;
 end;
@@ -428,6 +432,57 @@ begin
       result := ftDpk
     else if SameText(Extension, '.pas') then
       result := ftPas
+  end;
+end;
+
+function PasInProj(const FilePath: string; const ProjFile: string): Boolean;
+var
+  XMLDoc: IXMLDocument;
+  RootNode, ItemGroupNode: IXMLNode;
+begin
+  result := False;
+  XMLDoc := TXMLDocument.Create(nil);
+  XMLDoc.LoadFromFile(ProjFile);
+  RootNode := XMLDoc.DocumentElement;
+  ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
+  if Assigned(ItemGroupNode) then begin
+    for var I := 0 to Pred(ItemGroupNode.ChildNodes.Count) do begin
+      var Node := ItemGroupNode.ChildNodes.Get(I);
+      if SameText(Node.NodeName, 'DCCReference') then begin
+        var LocalPath := Node.Attributes['Include'];
+        var AbsolutePath := CalcPath(LocalPath, ProjFile);
+        if SameText(AbsolutePath, FilePath) then
+          exit(True);
+      end;
+    end;
+  end;
+end;
+
+function FindPasinGroupProj(const FilePath: string; const GroupProjFile: string): string;
+var
+  XMLDoc: IXMLDocument;
+  RootNode, ItemGroupNode: IXMLNode;
+begin
+  result := '';
+  try
+    XMLDoc := TXMLDocument.Create(nil);
+    XMLDoc.LoadFromFile(GroupProjFile);
+    RootNode := XMLDoc.DocumentElement;
+    ItemGroupNode := RootNode.ChildNodes.FindNode('ItemGroup');
+    if Assigned(ItemGroupNode) then begin
+      for var I := 0 to Pred(ItemGroupNode.ChildNodes.Count) do begin
+        var Node := ItemGroupNode.ChildNodes.Get(I);
+        if Node.NodeName = 'Projects' then begin
+          var LocalPath := Node.Attributes['Include'];
+          var ProjAbsolutePath := CalcPath(LocalPath, GroupProjFile);
+          if PasInProj(FilePath, ProjAbsolutePath) then
+              exit(ProjAbsolutePath);
+        end;
+      end;
+    end;
+
+  finally
+    XMLDoc := nil;
   end;
 end;
 

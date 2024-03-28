@@ -84,7 +84,7 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
         <Manifest_File>(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
-        <Debugger_RunParams>C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dpr C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj</Debugger_RunParams>
+        <Debugger_RunParams>C:\Source\SprutCAM\NCKernel\GPS\GLib.pas C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>

@@ -56,7 +56,6 @@ type
     FFiles:      TDictionary<string, integer>;
     FUsedFiles:  TStringList;
     FIgnoreFiles: TStringList;
-    FUndetectedFiles: TStringList; // Файлы необходимые для формирования DPR
     FPascalUnitExtractor: TPascalUnitExtractor;
   protected
     procedure StartScan;
@@ -87,9 +86,7 @@ type
     constructor Create;
 
     procedure LoadSettings(const DprojFile: TDprojFile);
-
     procedure Scan(const FilePath: string; FileType: TFileType);                overload;
-
     procedure FindFilesInFolder(const Folder: string);
 
     destructor Destroy;
@@ -99,8 +96,10 @@ var
   SeedFile: string;
   TargetPath: string;
 
+  // Для проекта внутри группы
   GroupProjFile: string;
-  ProjFile:  string;
+  // Для одиночного проекта
+//  ProjFile:  string;
 
   WithCopy: Boolean;
 
@@ -109,15 +108,12 @@ var
   DprojFile: TDprojFile;
   DprFile: TDprFile;
 
+  FileList: TStringList;
+
   // Threads
   InputThread: TInputThread;
-
-  DetectedUnits: TStringList;
-  UndetectedUnits: TStringList;
-
 const
   Step: TStep = stParsing;
-  Counter: Integer = 0;
 
 { TInputThread }
 
@@ -153,12 +149,12 @@ end;
 
 procedure Initialize;
 begin
-  UndetectedUnits := TStringList.Create;
+  FileList := TStringList.Create;
 end;
 
 procedure Finalize;
 begin
-  FreeAndNil(UndetectedUnits);
+  FreeAndNil(FileList);
 end;
 
 { TScanner }
@@ -280,9 +276,6 @@ begin
     for var un in UnitInfo.UsedUnits do begin
 
       var du := LowerCase(un.DelphiUnitName);
-
-      if SameText(du, 'ElTree') then
-        var a := 1;
 
       {Нужно ли проигнорировать?}
       if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
@@ -464,6 +457,25 @@ begin
   end;
 end;
 
+
+function GetLinkedPath(const SourcePath, TargetPath, FilePath: string): string;
+begin
+  var CommonAssociatedPrefix := TargetPath;
+  if not CommonAssociatedPrefix.EndsWith('\') then
+    CommonAssociatedPrefix := CommonAssociatedPrefix + '\';
+  var CommonSeedPrefix := SourcePath;
+
+  result := StringReplace(FilePath, CommonSeedPrefix, CommonAssociatedPrefix, [rfReplaceAll]);
+
+end;
+
+
+function Test(const str: string): string;
+begin
+  result := str;
+end;
+
+
 begin
   // Ini Files
   // Абсолютные и относительные ссылки
@@ -476,7 +488,8 @@ begin
   SeedFile := ParamStr(1);
   TargetPath := ParamStr(2);
   GroupProjFile := ParamStr(3);
-  WithCopy := False;
+  WithCopy := ParamStr(4).ToBoolean;
+
 
   // Этап 0: Обратока входных параметров
   FileType := GetFileType(SeedFile);
@@ -508,10 +521,12 @@ begin
       DprFile := TDprFile.Create(SeedFile);
     end;
     ftPas: begin
+      var ProjFile := FindPasInGroupProj(SeedFile, GroupProjFile);
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
         DprojFile := TDprojFile.Create(ProjFile);
         Scanner.LoadSettings(DprojFile);
-      end;
+      end else
+        raise Exception.Create('Ошибка!');
     end;
     ftUndefined:
       raise Exception.Create('Ошибка');
@@ -524,29 +539,64 @@ begin
       stParsing: begin
         Writeln('Начало сканирования.....');
         Scanner.Scan(SeedFile, FileType);
-        Scanner.GetResultArrays(DetectedUnits);
+        Scanner.GetResultArrays(FileList);
         Writeln('Конец Сканироания...');
         Step := stCoping;
       end;
 
       stCoping: begin
+        var Prefix := ExtractCommonPrefix(FileList);
+
         Writeln('Начало копирования...');
         if WithCopy then begin
 
-        end else begin
-          var NewDprojPath := TargetPath + ExtractFileNameWithoutExt(SeedFile) + '.dproj';
-          var New := DprojFile.CreateCopy(NewDprojPath);
+          var NewList :=  TStringList.Create;
+          for var F in FileList do begin
+            var path: string;
+            if ExtractFilePath(F) <> '' then begin
+              path := StringReplace(F, Prefix, TargetPath, [rfIgnoreCase]);
+              Test(path);
+              CopyWithDir(PChar(F), PChar(Path));
+            end else
+              path := F;
+            NewList.Add(Path);
+          end;
 
-          New.SaveFile(NewDprojPath);
+          FileList.Assign(NewList);
+        end;
 
-          var DPR := TDPRFile.Create(TargetPath + ExtractFileNameWithoutExt(SeedFile) + '.dpr');
-          DPR.LoadStructure(DprFile);
-          DPR.Assign(New);
-          DPR.UpdateResources(DprojFile);
-          DPR.UpdateUses(DetectedUnits);
+          var NewDprojPath := StringReplace(SeedFile, Prefix, TargetPath, [rfReplaceAll, rfIgnoreCase]);
+          Test(Prefix);
+          NewDprojPath := StringReplace(NewDprojPath, ExtractFileExt(NewDprojPath), '.dproj', [rfIgnoreCase]);
+          Test(NewDprojPath);
+
+          var NewDproj: TDprojFile;
+          if DprojFile <> nil then begin
+            NewDproj := DprojFile.CreateCopy(NewDprojPath);
+            NewDproj.SaveFile(NewDprojPath);
+          end;
+
+          var NewDprPath := StringReplace(SeedFile, Prefix, TargetPath, [rfIgnoreCase]);
+          NewDprPath := StringReplace(NewDprojPath, ExtractFileExt(NewDprojPath), '.dpr', [rfIgnoreCase]);
+
+          var DPR := TDPRFile.Create(NewDprPath);
+          if DprFile <> nil then begin
+            DPR.LoadStructure(DprFile)
+          end else begin
+            Dpr.BuildBaseStructure;
+          end;
+
+          if NewDproj <> nil then begin
+            DPR.Assign(NewDproj);
+            DPR.UpdateResources(DprojFile);
+          end;
+
+          if FileType = ftPas then
+            FileList.Delete(0);
+
+          DPR.UpdateUses(FileList);
           DPR.SaveFile;
 
-        end;
         Writeln('Конец копирования...');
         Step := stFinish;
       end;

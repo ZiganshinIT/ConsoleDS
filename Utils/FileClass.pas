@@ -36,6 +36,7 @@ const
 type
   {Основные настройки проекта}
   TMainSettings = record
+    FMainSource: string;
     FPlatform:  TPlatform;
     FConfig:    TConfig;
   end;
@@ -145,12 +146,13 @@ procedure TDprFile.BuildBaseStructure;
 
   procedure AddLine(const Text: string = '');
   begin
-    FStrings.Add(Text + #13#10);
+    FStrings.Add(Text);
   end;
 
 begin
   AddLine('program ' + FName + ';');
   AddLine('uses');
+  AddLine(';');
   AddLine('begin');
   AddLine('end.');
 end;
@@ -260,9 +262,9 @@ begin
         Inc(Line);
         Text := FStrings[Line];
       end;
+      Inc(Line);
       {Заполняем uses}
       List.Sort;
-
 
       for var Index := 0 to Pred(List.Count) do begin
         var un: string;
@@ -431,6 +433,8 @@ begin
   while Assigned(PropertyGroupNode) do begin
     if PropertyGroupNode.AttributeNodes.Count = 0 then begin
     // Парсим основные настройки
+      if PropertyGroupNode.ChildNodes.FindNode('MainSource') <> nil then
+        self.MainSettings.FMainSource := PropertyGroupNode.ChildNodes['MainSource'].Text;
       if PropertyGroupNode.ChildNodes.FindNode('Platform') <> nil then
         self.MainSettings.FPlatform.SetPlatform(PropertyGroupNode.ChildNodes['Platform'].Text);
       if PropertyGroupNode.ChildNodes.FindNode('Config') <> nil then
@@ -534,6 +538,8 @@ begin
   while Assigned(PropertyGroupNode) do begin
     if PropertyGroupNode.AttributeNodes.Count = 0 then begin
     // Устанавливаем основные настройки
+      if PropertyGroupNode.ChildNodes.FindNode('MainSource') <> nil then
+        PropertyGroupNode.ChildNodes['MainSource'].Text := self.MainSettings.FMainSource;
       if PropertyGroupNode.ChildNodes.FindNode('Platform') <> nil then
         PropertyGroupNode.ChildNodes['Platform'].Text := self.MainSettings.FPlatform.GetPlatformAsStr;
       if PropertyGroupNode.ChildNodes.FindNode('Config') <> nil then
@@ -562,44 +568,48 @@ end;
 
 procedure TDprojFile.RelinkAll(const Dest: TDprojFile);
 begin
+  Dest.MainSettings.FMainSource := ExtractFileNameWithoutExt(Dest.FPath) + '.dpr';
+
   var spArr := Dest.GetSearchPath(All, Base);
-        for var I := 0 to Length(spArr)-1 do begin
-          var spPath := CalcPath(spArr[I], self.Path);
-          spArr[I] := GetRelativeLink(Dest.Path, spPath);
-        end;
+    for var I := 0 to Length(spArr)-1 do begin
+      var spPath := CalcPath(spArr[I], self.Path);
+      spArr[I] := GetRelativeLink(Dest.Path, spPath);
+    end;
 
-        Dest.SetSearchPath(All, Base, spArr);
+    Dest.SetSearchPath(All, Base, spArr);
 
-        for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
-          for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
+    for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
+      for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
 
-          var HA := Dest.GetHostApplication(pe, ce);
-          HA := CalcPath(HA, self.FPath);
-          Dest.SetHostApplication(pe, ce, GetRelativeLink(Dest.Path, HA));
-
-          end;
-        end;
-
-      var Prefix := Dest.ConfigSettings[All][Base][ResourceOutputPath];
-      var ResArr := Dest.Resources;
-      for var I := 0 to Length(ResArr)-1 do begin
-        // Include
-        var Include := CalcPath(ResArr[I].Include, self.Path);
-        ResArr[I].Include := GetRelativeLink(Dest.Path, Include);
-        //Form
-        if not ResArr[I].Form.Contains(Prefix) then
-          ResArr[I].Form := Prefix + '\' + ResArr[I].Form;
-        var Form := CalcPath(ResArr[I].Form, self.Path);
-        ResArr[I].Form := GetRelativeLink(Dest.Path, Form);
+      var HA := Dest.GetHostApplication(pe, ce);
+      HA := CalcPath(HA, self.FPath);
+      Dest.SetHostApplication(pe, ce, GetRelativeLink(Dest.Path, HA));
 
       end;
+    end;
+
+    var Prefix := Dest.ConfigSettings[All][Base][ResourceOutputPath];
+    var ResArr := Dest.Resources;
+    for var I := 0 to Length(ResArr)-1 do begin
+      // Include
+      var Include := CalcPath(ResArr[I].Include, self.Path);
+      ResArr[I].Include := GetRelativeLink(Dest.Path, Include);
+      //Form
+      if not ResArr[I].Form.Contains(Prefix) then
+        ResArr[I].Form := Prefix + '\' + ResArr[I].Form;
+      var Form := CalcPath(ResArr[I].Form, self.Path);
+      ResArr[I].Form := GetRelativeLink(Dest.Path, Form);
+
+    end;
 
     Dest.Refresh;
 end;
 
 procedure TDprojFile.SaveFile(const FilePath: string);
 begin
+  ForceDirectories(GetDownPath(FilePath));
   FXMLDoc.SaveToFile(FilePath);
+
 end;
 
 procedure TDprojFile.SetDefines(const PlatformTyp: TPlatformEnum;
