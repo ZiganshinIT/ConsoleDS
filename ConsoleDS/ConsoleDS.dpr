@@ -93,8 +93,6 @@ begin
 
       end;
 
-
-
       {Параметр 2}
       TargetPath := ParamStr(2);
       if not TRegEx.IsMatch(TargetPath, PathRegex) then begin
@@ -132,10 +130,7 @@ begin
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-
-
   for var sd in SeedFiles do begin
-
 
   if Scanner = nil then
     Scanner := TScanner.Create;
@@ -212,14 +207,18 @@ begin
   end;
 
   {Создаем новый Dproj файл}
-  var NewDprojPath := StringReplace(SeedDprojFile.Path, Prefix, TargetPath, [rfReplaceAll, rfIgnoreCase]);
+  var NewDprojPath := StringReplace(sd, Prefix, TargetPath, [rfIgnoreCase]);
+  NewDprojPath := StringReplace(NewDprojPath, ExtractFileExt(sd), '.dproj', [rfIgnoreCase]);
+
   if SeedDprojFile <> nil then begin
     NewDprojFile := SeedDprojFile.CreateCopy(NewDprojPath);
     NewDprojFile.SaveFile;
   end;
 
   {Создаем новый Dpr файл}
-  var NewDprPath := StringReplace(SeedDprFile.Path, Prefix, TargetPath, [rfIgnoreCase]);
+  var NewDprPath := StringReplace(sd, Prefix, TargetPath, [rfIgnoreCase]);
+  NewDprPath := StringReplace(NewDprPath, ExtractFileExt(sd), '.dpr', [rfIgnoreCase]);
+
   NewDprFile := TDPRFile.Create(NewDprPath);
   NewDprFile.BuildBaseStructure;
   if SeedDprFile <> nil then begin

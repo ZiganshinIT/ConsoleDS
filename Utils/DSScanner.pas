@@ -181,6 +181,7 @@ begin
 
       var du := LowerCase(un.DelphiUnitName);
 
+
       {Нужно ли проигнорировать?}
       if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
         continue;
@@ -241,7 +242,7 @@ begin
         Line := List.Strings[Counter].Trim;
         var Words := Line.Split([' ']);
 
-        if Length(Words) > 1 then begin
+        if (Length(Words) > 1) AND (Line.Contains('''')) then begin
           var name := Words[0];
           if not FPasFiles.ContainsKey(LowerCase(name + '.pas')) then begin
             var pasPath := Line.Substring(Line.IndexOf('''') + 1,  Line.LastIndexOf('''') - Line.IndexOf('''')-1);
@@ -280,8 +281,31 @@ begin
   FindFilesFromProject(DprojFile.Path);
   var SearchPaths := DprojFile.GetSearchPath(All, Base);
   for var SearchPath in SearchPaths do begin
+
+    // Dcu
+      var Path := CalcPath(SearchPath, DprojFile.Path);
+      Path := StringReplace(Path, '$(Platform)', DprojFile.MainSettings.FPlatform.GetPlatformAsStr, [rfIgnoreCase]);
+
+      var FoundFiles: TStringDynArray;
+      var FileName: string;
+
+      FoundFiles := TDirectory.GetFiles(Path, '*.dcu', TSearchOption.soAllDirectories);
+      for FileName in FoundFiles do
+      begin
+        if not fDcuFiles.ContainsKey(ExtractFileName(FileName))then begin
+          fDcuFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+        end;
+      end;
+
+
+    // Pas
     var PathParts := SearchPath.Split(['\']);
     var ProjectName := PathParts[Length(PathParts)-1];
+    if SameText(ProjectName, 'dcu') then begin
+      for var Proj in FDprojFiles.Values do begin
+        FindFilesFromProject(CalcPath(Proj, ParamStr(3)));
+      end;
+    end;
     var ProjectPath: string;
     if FDprojFiles.TryGetValue(LowerCase(ProjectName), ProjectPath) then begin
       ProjectPath := CalcPath(ProjectPath, ParamStr(3));
@@ -300,9 +324,8 @@ begin
 end;
 
 procedure TScanner.StartScan;
-const
-  I: Integer = 0;
 begin
+  var I := 0;
   while I < FUsedFiles.Count do begin
     if IsEscPressed then
       exit;

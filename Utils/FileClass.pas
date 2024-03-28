@@ -194,6 +194,7 @@ end;
 
 procedure TDprFile.SaveFile;
 begin
+  ForceDirectories(GetDownPath(FPath));
   FStrings.SaveToFile(FPath);
 end;
 
@@ -278,6 +279,9 @@ begin
         end else if SameText(ExtractFileExt(F), '.pas')  then begin
           var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
           un := Name + ' in ''' + GetRelativeLink(FPath, F) + '''';
+        end else if SameText(ExtractFileExt(F), '.dcu')  then begin
+          var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
+        end;
         end else
           continue;
 
