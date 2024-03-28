@@ -32,7 +32,7 @@ uses
 
 var
   {Параметры}
-  SeedFile      : string;
+//  SeedFile      : string;
   TargetPath    : string;
   GroupProjFile : string;
   WithCopy      : Boolean;
@@ -46,6 +46,10 @@ var
 
   FileType: TFileType;
   FileList: TStringList;
+
+  SeedFiles: TArray<string>;
+
+  Scanner: TScanner;
 
 procedure ShowHelp;
 begin
@@ -73,16 +77,23 @@ begin
 
     4: begin
       {Параметр 1}
-      SeedFile := ParamStr(1);
-      if FileExists(SeedFile) then begin
-        FileType := GetFileType(ParamStr(1));
-        if FileType = ftUndefined then begin
-          Writeln('Недопустимый файл');
-          Readln;
-          exit;
-        end;
-      end else
-        Writeln('Файла ' + SeedFile + ' не существует');
+      SeedFiles := ParamStr(1).Split([';']);
+
+      for var sd in SeedFiles do begin
+
+        if FileExists(sd) then begin
+          FileType := GetFileType(sd);
+          if FileType = ftUndefined then begin
+            Writeln('Недопустимый файл');
+            Readln;
+            exit;
+          end;
+        end else
+          Writeln('Файла ' + sd + ' не существует');
+
+      end;
+
+
 
       {Параметр 2}
       TargetPath := ParamStr(2);
@@ -121,13 +132,20 @@ begin
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-  var Scanner := TScanner.Create;
+
+
+  for var sd in SeedFiles do begin
+
+
+  if Scanner = nil then
+    Scanner := TScanner.Create;
+  FileType := GetFileType(sd);
 
   case FileType of
     ftDproj: begin
-      SeedDprojFile := TDprojFile.Create(SeedFile);
+      SeedDprojFile := TDprojFile.Create(sd);
       Scanner.LoadSettings(SeedDprojFile);
-      var Dpr := StringReplace(SeedFile, '.dproj', '.dpr', [rfIgnoreCase]);
+      var Dpr := StringReplace(sd, '.dproj', '.dpr', [rfIgnoreCase]);
       if FileExists(Dpr) then
         SeedDprFile := TDprFile.Create(Dpr)
       else begin
@@ -137,8 +155,8 @@ begin
       end;
     end;
     ftDpr: begin
-      SeedDprFile := TDprFile.Create(SeedFile);
-      var DprojPath := StringReplace(SeedFile, '.dpr', '.dproj', [rfIgnoreCase]);
+      SeedDprFile := TDprFile.Create(sd);
+      var DprojPath := StringReplace(sd, '.dpr', '.dproj', [rfIgnoreCase]);
       if FileExists(DprojPath) then begin
         SeedDprojFile := TDprojFile.Create(DprojPath);
         Scanner.LoadSettings(SeedDprojFile);
@@ -149,7 +167,7 @@ begin
       end;
     end;
     ftPas: begin
-      var ProjFile := FindPasInGroupProj(SeedFile, GroupProjFile);
+      var ProjFile := FindPasInGroupProj(sd, GroupProjFile);
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
         SeedDprojFile := TDprojFile.Create(ProjFile);
         Scanner.LoadSettings(SeedDprojFile);
@@ -171,7 +189,7 @@ begin
     ftDproj, ftDpr:
       Scanner.Scan(SeedDprojFile);
     ftPas:
-      Scanner.Scan(SeedFile);
+      Scanner.Scan(sd);
   end;
   Scanner.GetResultArrays(FileList);
   Writeln('Конец Сканироания...');
@@ -222,7 +240,10 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
-  FreeAndNil(FileList);
+  FreeAndNil(Scanner);
+//  FreeAndNil(FileList);
+
+  end;
 
 end.
 

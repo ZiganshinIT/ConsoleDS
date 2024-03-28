@@ -230,7 +230,7 @@ begin
               end else
                 NewPath := OriginalName;
 
-              var FilePath := CalcPath(NewPath, ParamStr(1));
+              var FilePath := CalcPath(NewPath, OldDprojFile.FPath);
               var TextPath := GetRelativeLink(FPath, FilePath);
 
 
