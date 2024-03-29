@@ -6,7 +6,7 @@ uses
   Winapi.ActiveX,
 
   System.SysUtils, System.Classes, System.IOUtils, System.TypInfo, System.RegularExpressions,
-  System.StrUtils,
+  System.StrUtils, System.Generics.Collections,
 
   XMLDoc, XMLIntf,
 
@@ -148,14 +148,17 @@ type
   private
     FPath: string;
     FRequired: TArray<string>;
-    FContains: TArray<string>;
+    FContains: TDictionary<string, string>;
   protected
     procedure LoadFromFile;
   public
     constructor Create(const Path: string);
 
     property Required: TArray<string> read FRequired;
-    property Contains: TArray<string> read FContains;
+    property Contains: TDictionary<string, string> read FContains;
+    property Path: string read FPath;
+
+    destructor Destroy;
   end;
 
 
@@ -744,7 +747,13 @@ end;
 constructor TDpkFile.Create(const Path: string);
 begin
   FPath := Path;
+  FContains := TDictionary<string, string>.Create;
   LoadFromFile;
+end;
+
+destructor TDpkFile.Destroy;
+begin
+  FreeAndNil(FContains);
 end;
 
 procedure TDpkFile.LoadFromFile;
@@ -760,19 +769,21 @@ begin
 
     if Text.Contains('requires') then begin
       while not Text.Contains(';') AND (Line < Pred(List.Count)) do begin
-        Text := List.Strings[Line];
-        Text := Text.Trim([',', ';']);
-        FRequired := FRequired + [Text];
         Inc(Line);
+        Text := List.Strings[Line];
+        FRequired := FRequired + [Text.Trim([',', ';', ' '])];
       end;
     end;
 
     if Text.Contains('contains') then begin
       while not Text.Contains(';') AND (Line < Pred(List.Count)) do begin
-        Text := List.Strings[Line];
-        Text := Text.Trim([',', ';']);
-        FContains := FContains + [Text];
         Inc(Line);
+        Text := List.Strings[Line];
+        Text := Text.TrimLeft;
+        var Words := Text.Split([' ']);
+        var Path := Text.Substring(Text.IndexOf('''') + 1, Text.LastIndexOf('''') - Text.IndexOf('''') - 1);
+        if not FContains.ContainsKey(Words[0]) then
+          FContains.Add(Words[0], Path);
       end;
     end;
 

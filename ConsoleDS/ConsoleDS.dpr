@@ -45,6 +45,8 @@ var
   NewDprojFile: TDprojFile;
   NewDprFile:  TDprFile;
 
+  DpkFile: TDpkFile;
+
   FileType: TFileType;
   FileList: TStringList;
 
@@ -177,6 +179,7 @@ begin
 
         var Dpk := StringReplace(ProjFile, '.dproj', '.dpk', [rfIgnoreCase]);
         if FileExists(Dpk) then begin
+          DpkFile := TDpkFile.Create(Dpk);
           var a := 1;
         end;
       end else begin
@@ -196,8 +199,13 @@ begin
   case FileType of
     ftDproj, ftDpr:
       Scanner.Scan(SeedDprojFile);
-    ftPas:
-      Scanner.Scan(sd);
+    ftPas: begin
+      if DpkFile <> nil then
+        Scanner.Scan(DpkFile)
+      else
+        Scanner.Scan(sd);
+    end;
+
   end;
   Scanner.GetResultArrays(FileList);
   Writeln('Конец Сканироания...');
@@ -227,11 +235,23 @@ begin
 
   if (SeedDprojFile <> nil) and (FileType <> ftPas) then begin
     NewDprojFile := SeedDprojFile.CreateCopy(NewDprojPath);
+
     NewDprojFile.SaveFile;
   end else if FileType = ftPas then begin
     NewDprojFile := TDprojFile.Create(NewDprojPath);
     NewDprojFile.GenerateBase;
     NewDprojFile.LoadSettingFrom(SeedDprojFile);
+     if DpkFile <> nil then begin
+        var spArr: TArray<string>;
+        for var sp in Scanner.SearchPaths do begin
+          spArr := spArr + [GetRelativeLink(NewDprojFile.Path, sp)];
+        end;
+        NewDprojFile.SetSearchPath(All, Base, spArr);
+        NewDprojFile.Refresh;
+
+     end;
+
+
     NewDprojFile.SaveFile;
   end;
 

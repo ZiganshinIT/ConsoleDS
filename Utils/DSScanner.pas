@@ -24,6 +24,8 @@ type
     FUsedFiles:  TStringList;
     FIgnoreFiles: TStringList;
     FPascalUnitExtractor: TPascalUnitExtractor;
+
+    FSearchPaths: TStringList;
   protected
     procedure StartScan;
     procedure FindFilesFromProject(const ProjectPath: string);
@@ -49,8 +51,11 @@ type
     procedure LoadSettings(const DprojFile: TDprojFile);
     procedure Scan(const Dprojfile: TDprojFile);                                overload;
     procedure Scan(const Files: array of string);                               overload;
+    procedure Scan(const DpkFile: TDpkFile);                                    overload;
 
     procedure GetResultArrays(out DetectedFiles: TStringList);
+
+    property SearchPaths: TStringList read FSearchPaths;
 
     destructor Destroy;
   end;
@@ -127,6 +132,8 @@ begin
   FUsedFiles    :=   TStringList.Create;
   FIgnoreFiles  :=   TStringList.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
+
+  FSearchPaths := TStringList.Create;
 end;
 
 destructor TScanner.Destroy;
@@ -138,6 +145,8 @@ begin
   FreeAndNil(FUsedFiles);
   FreeAndNil(FIgnoreFiles);
   FreeAndNil(FPascalUnitExtractor);
+
+  FreeAndNil(FSearchPaths);
 end;
 
 procedure TScanner.DoScan(const FilePath: string);
@@ -180,6 +189,9 @@ begin
     for var un in UnitInfo.UsedUnits do begin
 
       var du := LowerCase(un.DelphiUnitName);
+
+      if SameText(du, 'STMachineTypes') then
+        var a := 1;
 
 
       {Нужно ли проигнорировать?}
@@ -323,6 +335,97 @@ begin
     AddFile(F);
   end;
   StartScan;
+end;
+
+procedure TScanner.Scan(const DpkFile: TDpkFile);
+//TODO: Загрузать Serach Path проета, а не преобразовывать DKP в searchPath
+begin
+  var IsFirst := True;
+  var DprojPath := StringReplace(DpkFile.Path, '.dpk', '.dproj', [rfIgnoreCase]);
+  var DprojFile := TDprojFile.Create(DprojPath);
+  DprojFile.LoadFromFile(DprojPath);
+
+  { Добавляет доступные define проекта }
+  FPascalUnitExtractor.DefineAnalizator.EnableDefines := DprojFile.GetDefinies([All, Win64], [Base, Cfg_2]);
+  FPascalUnitExtractor.DefineAnalizator.EnableDefines := FPascalUnitExtractor.DefineAnalizator.EnableDefines + ['MSWINDOWS'];
+
+  {Формируем массив файлов, которые нужно проигнорировать}
+  AddIngoreFilesFromResource;
+  AddIgnoreFiles(DprojFile.GetDebuggerSourcePath(Win64, Cfg_2));
+  AddIgnoreFile('SVG2Png');
+
+  var Libs := DpkFile.Required;
+  var Counter := 0;
+  while Counter < Length(Libs) do begin
+    var ProjectPath: string;
+    if FDprojFiles.TryGetValue(LowerCase(Libs[Counter]), ProjectPath) then begin
+      var currentDproj := CalcPath(ProjectPath, ParamStr(3));
+      var newDprPath := StringReplace(currentDproj, '.dproj', '.dpk', [rfIgnoreCase]);
+
+      if FileExists(newDprPath) then begin
+        var dpk := TDpkFile.Create(newDprPath);
+        if Length(dpk.Required) > 0 then begin
+          Libs := Libs + dpk.Required;
+        end;
+        if dpk.Contains.Count > 0 then begin
+          for var Key in dpk.Contains.Keys do begin
+
+            if not FPasFiles.ContainsKey(Key) then begin
+              var path: string;
+              if dpk.Contains.TryGetValue(Key, Path) then begin
+                FPasFiles.Add(Key, CalcPath(newDprPath, Path));
+                if IsFirst then
+                  AddFile(CalcPath(Path, newDprPath));
+              end;
+            end;
+          end;
+        end;
+        if IsFirst then
+          IsFirst := not IsFirst;
+      end;
+
+    end;
+    Inc(Counter);
+  end;
+
+  var sp := DprojFile.GetSearchPath(All, Base);
+
+  for var I := 0 to Pred(Length(Libs)) do begin
+    var l := sp[0] + '\' + Libs[I];
+
+    var AbsolutePath := CalcPath(l, DpkFile.Path);
+    if (FSearchPaths.IndexOf(AbsolutePath) = -1) then
+      FSearchPaths.Add(AbsolutePath);
+  end;
+
+
+  // Dcu
+    var Path := CalcPath(sp[0], DprojFile.Path);
+    Path := StringReplace(Path, '$(Platform)', DprojFile.MainSettings.FPlatform.GetPlatformAsStr, [rfIgnoreCase]);
+
+    var FoundFiles: TStringDynArray;
+    var FileName: string;
+
+    if DirectoryExists(Path) then begin
+      FoundFiles := TDirectory.GetFiles(Path, '*.*', TSearchOption.soAllDirectories);
+      for FileName in FoundFiles do
+      begin
+        var Extension := ExtractFileExt(FileName);
+
+        if SameText(Extension, '.dcu') then begin
+          if not fDcuFiles.ContainsKey(ExtractFileName(FileName))then begin
+            fDcuFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+          end;
+        end else if SameText(Extension, '.pas') then begin
+          if not FPasFiles.ContainsKey(ExtractFileName(FileName))then begin
+            FPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
+          end;
+        end;
+      end;
+    end;
+
+
+    StartScan;
 end;
 
 procedure TScanner.StartScan;
