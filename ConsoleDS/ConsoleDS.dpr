@@ -140,6 +140,7 @@ begin
   case FileType of
     ftDproj: begin
       SeedDprojFile := TDprojFile.Create(sd);
+      SeedDprojFile.LoadFromFile(sd);
       Scanner.LoadSettings(SeedDprojFile);
       var Dpr := StringReplace(sd, '.dproj', '.dpr', [rfIgnoreCase]);
       if FileExists(Dpr) then
@@ -155,6 +156,7 @@ begin
       var DprojPath := StringReplace(sd, '.dpr', '.dproj', [rfIgnoreCase]);
       if FileExists(DprojPath) then begin
         SeedDprojFile := TDprojFile.Create(DprojPath);
+        SeedDprojFile.LoadFromFile(DprojPath);
         Scanner.LoadSettings(SeedDprojFile);
       end else begin
         Writeln('Не найдет Dproj файл');
@@ -166,7 +168,17 @@ begin
       var ProjFile := FindPasInGroupProj(sd, GroupProjFile);
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
         SeedDprojFile := TDprojFile.Create(ProjFile);
+        SeedDprojFile.LoadFromFile(ProjFile);
         Scanner.LoadSettings(SeedDprojFile);
+        var Dpr := StringReplace(ProjFile, '.dproj', '.dpr', [rfIgnoreCase]);
+        if FileExists(Dpr) then begin
+          var a := 1;
+        end;
+
+        var Dpk := StringReplace(ProjFile, '.dproj', '.dpk', [rfIgnoreCase]);
+        if FileExists(Dpk) then begin
+          var a := 1;
+        end;
       end else begin
         Writeln('Файл не найдет в группе проектов');
         Readln;
@@ -213,8 +225,13 @@ begin
   var NewDprojPath := StringReplace(sd, Prefix, TargetPath, [rfIgnoreCase]);
   NewDprojPath := StringReplace(NewDprojPath, ExtractFileExt(sd), '.dproj', [rfIgnoreCase]);
 
-  if SeedDprojFile <> nil then begin
+  if (SeedDprojFile <> nil) and (FileType <> ftPas) then begin
     NewDprojFile := SeedDprojFile.CreateCopy(NewDprojPath);
+    NewDprojFile.SaveFile;
+  end else if FileType = ftPas then begin
+    NewDprojFile := TDprojFile.Create(NewDprojPath);
+    NewDprojFile.GenerateBase;
+    NewDprojFile.LoadSettingFrom(SeedDprojFile);
     NewDprojFile.SaveFile;
   end;
 

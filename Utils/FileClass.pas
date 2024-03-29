@@ -10,7 +10,7 @@ uses
 
   XMLDoc, XMLIntf,
 
-  DSUtils, DSTypes;
+  DSUtils, DSTypes, DSDprojStructure;
 
 type
   TSettingsFields =
@@ -20,7 +20,9 @@ type
     Definies,
     ResourceOutputPath,
     DcuOutput,
-    Debugger_HostApplication
+    Debugger_HostApplication,
+    WriteableConstants,
+    NameSpace
   );
 
 const
@@ -31,7 +33,9 @@ const
     'DCC_Define',                                 // Defines
     'BRCC_OutputDir',                             // Resources Prefix
     'DCC_DcuOutput',                              // DCU Output Path
-    'Debugger_HostApplication'                    // EXE location
+    'Debugger_HostApplication',                   // EXE location
+    'DCC_WriteableConstants',
+    'DCC_Namespace'
   );
 type
   {Основные настройки проекта}
@@ -82,6 +86,9 @@ type
     procedure SaveFile;
 
     function CreateCopy(const FilePath: string): TDprojFile;
+    procedure GenerateBase;
+
+    procedure LoadSettingFrom(const Source: TDprojFile);
 
     procedure Refresh;
 
@@ -94,11 +101,17 @@ type
 
     function GetHostApplication(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
 
+    function GetWriteableConstants(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): string;
+    function GetNameSpace(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum): TArray<string>;
+
     //Setters
     procedure SetDefines(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum; const Defines: TArray<string>);
     procedure SetSearchPath(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum; const SearchPaths: TArray<string>);
 
     procedure SetHostApplication(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum; HostApplication: string);
+    procedure SetWriteableConstants(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum; WriteableConstantsValue: string);
+
+    procedure SetNameSpace(const PlatformTyp: TPlatformEnum; const ConfigTyp: TConfigEnum; const NameSpaceValue: TArray<string>);
 
     property Resources: TArray<TResource> read FResources write FResources;
     property Path: string read FPath;
@@ -106,7 +119,7 @@ type
     destructor Destroy;
   end;
 
-    TDprFile = class
+  TDprFile = class
   private
     FName: string;
     FPath: string;
@@ -129,6 +142,20 @@ type
     property Path: string read FPath;
 
     destructor Destroy;
+  end;
+
+  TDpkFile = class
+  private
+    FPath: string;
+    FRequired: TArray<string>;
+    FContains: TArray<string>;
+  protected
+    procedure LoadFromFile;
+  public
+    constructor Create(const Path: string);
+
+    property Required: TArray<string> read FRequired;
+    property Contains: TArray<string> read FContains;
   end;
 
 
@@ -306,7 +333,8 @@ end;
 constructor TDprojFile.Create(const Path: string);
 begin
   FXMLDoc := TXMLDocument.Create(nil);
-  self.LoadFromFile(Path);
+  FPath := Path;
+//  self.LoadFromFile(Path);
 end;
 
 function TDprojFile.CreateCopy(const FilePath: string): TDprojFile;
@@ -326,6 +354,15 @@ end;
 destructor TDprojFile.Destroy;
 begin
   FXMLDoc := nil;
+end;
+
+procedure TDprojFile.GenerateBase;
+var
+  List: TStringList;
+begin
+  List := TStringList.Create;
+  GenerateDproj(List);
+  FXMLDoc.LoadFromXML(List.GetText);
 end;
 
 function TDprojFile.GetDebuggerSourcePath(const PlatformTyp: TPlatformEnum;
@@ -357,6 +394,22 @@ begin
   result := Self.ConfigSettings[PlatformTyp][ConfigTyp][Debugger_HostApplication];
 end;
 
+function TDprojFile.GetNameSpace(const PlatformTyp: TPlatformEnum;
+  const ConfigTyp: TConfigEnum): TArray<string>;
+begin
+  var NS := Self.ConfigSettings[PlatformTyp][ConfigTyp][Namespace];
+  var Arr := NS.Split([';']);
+  for var I := 0 to Length(Arr)-2 do begin
+    result := result + [Arr[I]];
+  end;
+end;
+
+function TDprojFile.GetWriteableConstants(const PlatformTyp: TPlatformEnum;
+  const ConfigTyp: TConfigEnum): string;
+begin
+  result := Self.ConfigSettings[PlatformTyp][ConfigTyp][WriteableConstants];
+end;
+
 function TDprojFile.GetDefinies(const PlatformTyp: TPlatformEnum;
   const ConfigTyp: TConfigEnum): TArray<string>;
 begin
@@ -381,7 +434,6 @@ procedure TDprojFile.LoadFromFile(const Path: string);
 begin
   CoInitializeEx(nil, COINIT_MULTITHREADED);
 
-  FPath := Path;
   FXMLDoc.LoadFromFile(Path);
 
   self.LoadPropertyGroup;
@@ -456,6 +508,11 @@ begin
     PropertyGroupNode := PropertyGroupNode.NextSibling;
   end;
 
+end;
+
+procedure TDprojFile.LoadSettingFrom(const Source: TDprojFile);
+begin
+  Source.RelinkAll(self);
 end;
 
 {
@@ -534,12 +591,13 @@ var
   SettingField: TSettingsFields;
   PlatformType: TPlatformEnum;
   ConfigType: TConfigEnum;
+  Counter: Integer;
 begin
   RootNode := FXMLDoc.DocumentElement;
 
   PropertyGroupNode := RootNode.ChildNodes.FindNode('PropertyGroup');
 
-  while Assigned(PropertyGroupNode) do begin
+  while Assigned(PropertyGroupNode) AND SameText(PropertyGroupNode.NodeName, 'PropertyGroup')  do begin
     if PropertyGroupNode.AttributeNodes.Count = 0 then begin
     // Устанавливаем основные настройки
       if PropertyGroupNode.ChildNodes.FindNode('MainSource') <> nil then
@@ -552,22 +610,29 @@ begin
     end else begin
     // Устанавливаем настройки конфигураций
       // Перебираем поля
+      Counter := 0;
       for SettingField := Low(TSettingsFields) to High(TSettingsFields) do begin
-        if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[SettingField]) <> nil then begin
-          var Text := PropertyGroupNode.ChildNodes[SettingsFieldsStr[SettingField]].Text;
+        var condition := PropertyGroupNode.Attributes['Condition'];
+        if string(condition).Contains('$(Config)') OR string(condition).Contains('$(Platform)') then
+          break;
+          // Получаем текущую кофигурацию
+          ParseCondition(condition, PlatformType, ConfigType);
+          // Получаем текущую кофигурацию
+          ParseCondition(condition, PlatformType, ConfigType);
+          var Text := self.ConfigSettings[PlatformType][ConfigType][SettingField];
           if not Text.IsEmpty then begin
-            var condition := PropertyGroupNode.Attributes['Condition'];
-            // Получаем текущую кофигурацию
-            ParseCondition(condition, PlatformType, ConfigType);
-
-            PropertyGroupNode.ChildNodes[SettingsFieldsStr[SettingField]].Text := self.ConfigSettings[PlatformType][ConfigType][SettingField];
+            if PropertyGroupNode.ChildNodes.FindNode(SettingsFieldsStr[SettingField]) <> nil then begin
+              PropertyGroupNode.ChildNodes[SettingsFieldsStr[SettingField]].Text := self.ConfigSettings[PlatformType][ConfigType][SettingField];
+            end else begin
+              PropertyGroupNode.AddChild(SettingsFieldsStr[SettingField], Counter).Text := self.ConfigSettings[PlatformType][ConfigType][SettingField];
+              inc(counter);
+            end;
           end;
-        end;
+
       end;
     end;
     PropertyGroupNode := PropertyGroupNode.NextSibling;
   end;
-
 end;
 
 
@@ -575,28 +640,46 @@ end;
 procedure TDprojFile.RelinkAll(const Dest: TDprojFile);
 begin
   Dest.MainSettings.FConfig.SetConfig(Cfg_1);
+  Dest.MainSettings.FPlatform.SetPlatform(Win64);
   Dest.MainSettings.FMainSource := ExtractFileNameWithoutExt(Dest.FPath) + '.dpr';
 
-  var spArr := Dest.GetSearchPath(All, Base);
-    for var I := 0 to Length(spArr)-1 do begin
-      var spPath := CalcPath(spArr[I], self.Path);
-      spArr[I] := GetRelativeLink(Dest.Path, spPath);
-    end;
+  for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
+    for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
 
-    Dest.SetSearchPath(All, Base, spArr);
+      var spArr := self.GetSearchPath(pe, ce);
+      for var I := 0 to Length(spArr)-1 do begin
+        var spPath := CalcPath(spArr[I], self.Path);
+        spArr[I] := GetRelativeLink(Dest.Path, spPath);
+      end;
 
-    for var pe := Low(TPlatformEnum) to High(TPlatformEnum) do begin
-      for var ce := Low(TConfigEnum) to High(TConfigEnum) do begin
+      if Length(spArr) > 0 then
+        Dest.SetSearchPath(pe, ce, spArr);
+
+      var DefineArr := self.GetDefinies(pe, ce);
+      if Length(DefineArr) > 0 then
+        Dest.SetDefines(pe, ce, DefineArr);
+
+      var WriteableConstantsValue := self.GetWriteableConstants(pe, ce);
+      if not WriteableConstantsValue.IsEmpty then
+         Dest.SetWriteableConstants(pe, ce, WriteableConstantsValue);
+
+      var snArr := self.GetNameSpace(pe, ce);
+      if Length(snArr) > 0 then
+        Dest.SetNameSpace(pe, ce, snArr);
+
 
       var HA := Dest.GetHostApplication(pe, ce);
-      HA := CalcPath(HA, self.FPath);
-      Dest.SetHostApplication(pe, ce, GetRelativeLink(Dest.Path, HA));
-
+      if not HA.IsEmpty then begin
+        HA := CalcPath(HA, self.FPath);
+        Dest.SetHostApplication(pe, ce, GetRelativeLink(Dest.Path, HA));
       end;
-    end;
 
-    var Prefix := Dest.ConfigSettings[All][Base][ResourceOutputPath];
-    var ResArr := Dest.Resources;
+    end;
+  end;
+
+  var Prefix := Dest.ConfigSettings[All][Base][ResourceOutputPath];
+  var ResArr := Dest.Resources;
+  if Length(ResArr) > 0 then begin
     for var I := 0 to Length(ResArr)-1 do begin
       // Include
       var Include := CalcPath(ResArr[I].Include, self.Path);
@@ -606,8 +689,8 @@ begin
         ResArr[I].Form := Prefix + '\' + ResArr[I].Form;
       var Form := CalcPath(ResArr[I].Form, self.Path);
       ResArr[I].Form := GetRelativeLink(Dest.Path, Form);
-
     end;
+  end;
 
     Dest.Refresh;
 end;
@@ -633,12 +716,68 @@ begin
   Self.ConfigSettings[PlatformTyp][ConfigTyp][Debugger_HostApplication] := HostApplication;
 end;
 
+procedure TDprojFile.SetNameSpace(const PlatformTyp: TPlatformEnum;
+  const ConfigTyp: TConfigEnum; const NameSpaceValue: TArray<string>);
+begin
+  var Arr := NameSpaceValue;
+  Arr := Arr + ['$(DCC_Namespace)'];
+  Self.ConfigSettings[PlatformTyp][ConfigTyp][NameSpace] := string.Join(';', Arr);
+end;
+
 procedure TDprojFile.SetSearchPath(const PlatformTyp: TPlatformEnum;
   const ConfigTyp: TConfigEnum; const SearchPaths: TArray<string>);
 begin
   var Arr := SearchPaths;
   Arr := Arr + ['$(DCC_UnitSearchPath)'];
   Self.ConfigSettings[PlatformTyp][ConfigTyp][SearchPath] := string.Join(';', Arr);
+end;
+
+
+procedure TDprojFile.SetWriteableConstants(const PlatformTyp: TPlatformEnum;
+  const ConfigTyp: TConfigEnum; WriteableConstantsValue: string);
+begin
+  Self.ConfigSettings[PlatformTyp][ConfigTyp][WriteableConstants] := WriteableConstantsValue;
+end;
+
+{ TDpkFile }
+
+constructor TDpkFile.Create(const Path: string);
+begin
+  FPath := Path;
+  LoadFromFile;
+end;
+
+procedure TDpkFile.LoadFromFile;
+var
+  List: TStringList;
+begin
+  List := TStringList.Create;
+  List.LoadFromFile(FPath);
+
+  var Line := 0;
+  while Line < Pred(List.Count) do begin
+    var Text := List.Strings[Line];
+
+    if Text.Contains('requires') then begin
+      while not Text.Contains(';') AND (Line < Pred(List.Count)) do begin
+        Text := List.Strings[Line];
+        Text := Text.Trim([',', ';']);
+        FRequired := FRequired + [Text];
+        Inc(Line);
+      end;
+    end;
+
+    if Text.Contains('contains') then begin
+      while not Text.Contains(';') AND (Line < Pred(List.Count)) do begin
+        Text := List.Strings[Line];
+        Text := Text.Trim([',', ';']);
+        FContains := FContains + [Text];
+        Inc(Line);
+      end;
+    end;
+
+    Inc(Line);
+  end;
 end;
 
 end.

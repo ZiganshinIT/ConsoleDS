@@ -4,7 +4,7 @@
         <ProjectVersion>19.5</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Debug</Config>
+        <Config Condition="'$(Config)'==''">Release</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Console</AppType>
@@ -111,7 +111,7 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
         <Manifest_File>(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
-        <Debugger_RunParams>C:\Source\SprutCAM\NCKernel\GPS\GLib.pas C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
+        <Debugger_RunParams>C:\Source\SprutCAM\SprutCAM40\ComputingPart\Technology\Operations\KnifeOp.pas C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
         <DCC_WriteableConstants>true</DCC_WriteableConstants>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
