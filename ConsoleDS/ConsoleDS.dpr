@@ -201,7 +201,7 @@ begin
       Scanner.Scan(SeedDprojFile);
     ftPas: begin
       if DpkFile <> nil then
-        Scanner.Scan(DpkFile)
+        Scanner.Scan(DpkFile, sd)
       else
         Scanner.Scan(sd);
     end;

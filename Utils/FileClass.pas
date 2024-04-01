@@ -64,6 +64,7 @@ type
   protected
     // Item Group
     FResources: TArray<TResource>;
+    FReference: TDictionary<string, string>;
     procedure RelinkAll(const Dest: TDprojFile);
   public
     // Property Groups
@@ -147,14 +148,14 @@ type
   TDpkFile = class
   private
     FPath: string;
-    FRequired: TArray<string>;
+    FRequires: TArray<string>;
     FContains: TDictionary<string, string>;
   protected
     procedure LoadFromFile;
   public
     constructor Create(const Path: string);
 
-    property Required: TArray<string> read FRequired;
+    property Requires: TArray<string> read FRequires;
     property Contains: TDictionary<string, string> read FContains;
     property Path: string read FPath;
 
@@ -337,6 +338,7 @@ constructor TDprojFile.Create(const Path: string);
 begin
   FXMLDoc := TXMLDocument.Create(nil);
   FPath := Path;
+  FReference := TDictionary<string, string>.Create;
 //  self.LoadFromFile(Path);
 end;
 
@@ -352,6 +354,7 @@ end;
 constructor TDprojFile.Create;
 begin
  FXMLDoc := TXMLDocument.Create(nil);
+ FReference := TDictionary<string, string>.Create;
 end;
 
 destructor TDprojFile.Destroy;
@@ -463,8 +466,14 @@ begin
           Resource.Form := node.ChildNodes['Form'].NodeValue;
         end;
         FResources := FResources + [Resource];
+      end else if SameText(Node.LocalName, 'DCCReference') then begin
+        var LocalPath := Node.Attributes['Include'];
+        if IsRelativePath(LocalPath) then begin
+          FReference.Add(ExtractFileName(LocalPath), CalcPath(LocalPath, self.FPath));
+        end else begin
+          FReference.Add(LocalPath, '');
+        end;
       end;
-
     end;
   end;
 
@@ -667,6 +676,7 @@ begin
          Dest.SetWriteableConstants(pe, ce, WriteableConstantsValue);
 
       var snArr := self.GetNameSpace(pe, ce);
+      snArr := snArr + ['IDL'];
       if Length(snArr) > 0 then
         Dest.SetNameSpace(pe, ce, snArr);
 
@@ -771,7 +781,7 @@ begin
       while not Text.Contains(';') AND (Line < Pred(List.Count)) do begin
         Inc(Line);
         Text := List.Strings[Line];
-        FRequired := FRequired + [Text.Trim([',', ';', ' '])];
+        FRequires := FRequires + [Text.Trim([',', ';', ' '])];
       end;
     end;
 

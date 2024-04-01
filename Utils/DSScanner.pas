@@ -51,7 +51,7 @@ type
     procedure LoadSettings(const DprojFile: TDprojFile);
     procedure Scan(const Dprojfile: TDprojFile);                                overload;
     procedure Scan(const Files: array of string);                               overload;
-    procedure Scan(const DpkFile: TDpkFile);                                    overload;
+    procedure Scan(const DpkFile: TDpkFile; const sd: string);                  overload;
 
     procedure GetResultArrays(out DetectedFiles: TStringList);
 
@@ -154,7 +154,7 @@ var
   UnitInfo: IUnitInfo;
 begin
   var Extension := LowerCase(ExtractFileExt(FilePath));
-  if SameText(Extension, '.pas') OR SameText(Extension, '.dpr') then begin
+  if SameText(Extension, '.pas') OR SameText(Extension, '.dpr') OR SameText(Extension, '.dpk') then begin
     self.DoScanUnit(FilePath);
   end else if SameText(Extension, '.rc') then begin
     self.DoScanRCFiles(FilePath);
@@ -179,8 +179,11 @@ var
   Parsed: Boolean;
   pas: string;
 begin
+
   Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
   if Parsed then begin
+
+
 
     if UnitInfo.OtherUsedItems.Count > 0 then begin
       AddOtherFiles(UnitPath, UnitInfo);
@@ -189,10 +192,6 @@ begin
     for var un in UnitInfo.UsedUnits do begin
 
       var du := LowerCase(un.DelphiUnitName);
-
-      if SameText(du, 'STMachineTypes') then
-        var a := 1;
-
 
       {Нужно ли проигнорировать?}
       if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
@@ -337,9 +336,10 @@ begin
   StartScan;
 end;
 
-procedure TScanner.Scan(const DpkFile: TDpkFile);
+procedure TScanner.Scan(const DpkFile: TDpkFile; const sd: string);
 //TODO: Загрузать Serach Path проета, а не преобразовывать DKP в searchPath
 begin
+  FPasFiles.Clear;
   var IsFirst := True;
   var DprojPath := StringReplace(DpkFile.Path, '.dpk', '.dproj', [rfIgnoreCase]);
   var DprojFile := TDprojFile.Create(DprojPath);
@@ -354,76 +354,53 @@ begin
   AddIgnoreFiles(DprojFile.GetDebuggerSourcePath(Win64, Cfg_2));
   AddIgnoreFile('SVG2Png');
 
-  var Libs := DpkFile.Required;
+  AddFile(sd);
+
   var Counter := 0;
-  while Counter < Length(Libs) do begin
-    var ProjectPath: string;
-    if FDprojFiles.TryGetValue(LowerCase(Libs[Counter]), ProjectPath) then begin
-      var currentDproj := CalcPath(ProjectPath, ParamStr(3));
-      var newDprPath := StringReplace(currentDproj, '.dproj', '.dpk', [rfIgnoreCase]);
+  var Used := TStringList.Create;
+  Used.Add(ExtractFileNameWithoutExt(DpkFile.Path));
 
-      if FileExists(newDprPath) then begin
-        var dpk := TDpkFile.Create(newDprPath);
-        if Length(dpk.Required) > 0 then begin
-          Libs := Libs + dpk.Required;
+  while Counter < Used.Count do begin
+    var Dproj: string;
+    if FDprojFiles.TryGetValue(LowerCase(Used[Counter]), Dproj) then begin
+      var dpkLocal := stringReplace(dproj, '.dproj', '.dpk', [rfIgnoreCase]);
+      var dpkAbsolute := CalcPath(dpkLocal, ParamStr(3));
+      var Dpk := TDpkFile.Create(dpkAbsolute);
+
+
+      for var R in Dpk.Requires do begin
+        var Value: string;
+        if FDprojFiles.TryGetValue(LowerCase(R), Value) then
+          Used.Add(R)
+        else begin
+
+////
+//
+//          FSearchPaths.Add(Path + '\' + R);
         end;
-        if dpk.Contains.Count > 0 then begin
-          for var Key in dpk.Contains.Keys do begin
+      end;
 
-            if not FPasFiles.ContainsKey(Key) then begin
-              var path: string;
-              if dpk.Contains.TryGetValue(Key, Path) then begin
-                FPasFiles.Add(Key, CalcPath(newDprPath, Path));
-                if IsFirst then
-                  AddFile(CalcPath(Path, newDprPath));
-              end;
-            end;
+      for var C in Dpk.Contains.Keys do begin
+        if not FPasFiles.ContainsKey(LowerCase(C + '.pas')) then begin
+          var LocPath: string;
+          if Dpk.Contains.TryGetValue(C, LocPath) then begin
+            FPasFiles.Add(LowerCase(C + '.pas'), CalcPath(Locpath, dpkAbsolute));
           end;
         end;
-        if IsFirst then
-          IsFirst := not IsFirst;
       end;
 
     end;
     Inc(Counter);
   end;
 
+
   var sp := DprojFile.GetSearchPath(All, Base);
-
-  for var I := 0 to Pred(Length(Libs)) do begin
-    var l := sp[0] + '\' + Libs[I];
-
-    var AbsolutePath := CalcPath(l, DpkFile.Path);
-    if (FSearchPaths.IndexOf(AbsolutePath) = -1) then
-      FSearchPaths.Add(AbsolutePath);
+  var Path := CalcPath(sp[0], DprojFile.Path);
+  Path := StringReplace(Path, '$(Platform)', DprojFile.MainSettings.FPlatform.GetPlatformAsStr, [rfIgnoreCase]);
+  var AFolders := TDirectory.GetDirectories(Path);
+  for var Folder in AFolders do begin
+    FSearchPaths.Add(Folder);
   end;
-
-
-  // Dcu
-    var Path := CalcPath(sp[0], DprojFile.Path);
-    Path := StringReplace(Path, '$(Platform)', DprojFile.MainSettings.FPlatform.GetPlatformAsStr, [rfIgnoreCase]);
-
-    var FoundFiles: TStringDynArray;
-    var FileName: string;
-
-    if DirectoryExists(Path) then begin
-      FoundFiles := TDirectory.GetFiles(Path, '*.*', TSearchOption.soAllDirectories);
-      for FileName in FoundFiles do
-      begin
-        var Extension := ExtractFileExt(FileName);
-
-        if SameText(Extension, '.dcu') then begin
-          if not fDcuFiles.ContainsKey(ExtractFileName(FileName))then begin
-            fDcuFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
-          end;
-        end else if SameText(Extension, '.pas') then begin
-          if not FPasFiles.ContainsKey(ExtractFileName(FileName))then begin
-            FPasFiles.AddOrSetValue(LowerCase(ExtractFileName(FileName)), FileName);
-          end;
-        end;
-      end;
-    end;
-
 
     StartScan;
 end;

@@ -397,13 +397,13 @@ begin
 
   ExtractFiles([ResourceExts, IncludeExts, OtherExts], [UnitStr, ProgramStr, PackageStr, LibraryStr]);
 
-  if SameText(UnitStr, FTokeniser.Token.Text) then
+  if FTokeniser.Token.Text.Contains(UnitStr) then
     UnitInfo.DelphiFileType := ftPAS else
-  if SameText(ProgramStr, FTokeniser.Token.Text) then
+  if FTokeniser.Token.Text.Contains(ProgramStr) then
     UnitInfo.DelphiFileType := ftDPR else
-  if SameText(PackageStr, FTokeniser.Token.Text) then
+  if FTokeniser.Token.Text.Contains(PackageStr) then
     UnitInfo.DelphiFileType := ftDPK else
-  if SameText(LibraryStr, FTokeniser.Token.Text) then
+  if FTokeniser.Token.Text.Contains(LibraryStr) then
     UnitInfo.DelphiFileType := ftLIB
   else
   begin
@@ -461,7 +461,7 @@ begin
 
     ftDPK:
       begin
-        ExtractFiles([ResourceExts, IncludeExts, OtherExts], [UsesStr]);
+        ExtractFiles([ResourceExts, IncludeExts, OtherExts], [ContainsStr]);
         if FTokeniser.FindNextToken(ContainsStr) then
           ExtractUnits(utContains);
         ExtractFiles([ResourceExts, IncludeExts, OtherExts], ['']);
