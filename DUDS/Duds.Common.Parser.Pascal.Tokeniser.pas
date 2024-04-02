@@ -143,7 +143,7 @@ type
   private
     FFileDefine: TArray<string>;
     FStack: array of TDefine;
-    FEnableDefines: TArray<string>;
+    FEnableDefines: TStringList;
     FResult: Boolean;
     procedure TrimDefine(var define: string);
     function GetDefineType(const Define: string): TDefineType;
@@ -155,12 +155,16 @@ type
     procedure Remove;
     function Top: TDefine;
   public
+    constructor Create;
+
     procedure Analize(const Defines: string);
     procedure ClearStack;
     procedure ClearFileDefine;
 
     property Result: Boolean read FResult;
-    property EnableDefines: TArray<string> read FEnableDefines write FEnableDefines;
+    property EnableDefines: TStringList read FEnableDefines write FEnableDefines;
+
+    destructor Destroy;
   end;
 
 implementation
@@ -536,6 +540,16 @@ end;
 procedure TDefineAnalizator.ClearStack;
 begin
   SetLength(FStack, 0);
+end;
+
+constructor TDefineAnalizator.Create;
+begin
+  FEnableDefines := TStringList.Create
+end;
+
+destructor TDefineAnalizator.Destroy;
+begin
+  FreeAndNil(FEnableDefines);
 end;
 
 function TDefineAnalizator.GetDefineExpression(const Define: string): string;

@@ -111,7 +111,7 @@
         <VerInfo_Locale>1033</VerInfo_Locale>
         <Manifest_File>(None)</Manifest_File>
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
-        <Debugger_RunParams>C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dproj C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 1</Debugger_RunParams>
+        <Debugger_RunParams>C:\Source\SprutCAM\SprutCAM40\SCKernel\main\SCKernel.dproj C:\TestSource\ C:\Source\SprutCAM\SprutCAM.groupproj 0</Debugger_RunParams>
         <DCC_WriteableConstants>true</DCC_WriteableConstants>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
@@ -151,7 +151,7 @@
         <DCCReference Include="..\Utils\DSScanner.pas"/>
         <DCCReference Include="..\Utils\DSThreads.pas"/>
         <DCCReference Include="..\Utils\DSConst.pas"/>
-        <DCCReference Include="..\Utils\DSDprojStructure.pas"/>
+        <DCCReference Include="..\Utils\DSDprojTypes.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

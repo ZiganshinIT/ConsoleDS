@@ -29,11 +29,10 @@ uses
   DSScanner in '..\Utils\DSScanner.pas',
   DSThreads in '..\Utils\DSThreads.pas',
   DSConst in '..\Utils\DSConst.pas',
-  DSDprojStructure in '..\Utils\DSDprojStructure.pas';
+  DSDprojTypes in '..\Utils\DSDprojTypes.pas';
 
 var
   {Параметры}
-//  SeedFile      : string;
   TargetPath    : string;
   GroupProjFile : string;
   WithCopy      : Boolean;
@@ -137,12 +136,12 @@ begin
 
   if Scanner = nil then
     Scanner := TScanner.Create;
+
   FileType := GetFileType(sd);
 
   case FileType of
     ftDproj: begin
       SeedDprojFile := TDprojFile.Create(sd);
-      SeedDprojFile.LoadFromFile(sd);
       Scanner.LoadSettings(SeedDprojFile);
       var Dpr := StringReplace(sd, '.dproj', '.dpr', [rfIgnoreCase]);
       if FileExists(Dpr) then
@@ -158,7 +157,6 @@ begin
       var DprojPath := StringReplace(sd, '.dpr', '.dproj', [rfIgnoreCase]);
       if FileExists(DprojPath) then begin
         SeedDprojFile := TDprojFile.Create(DprojPath);
-        SeedDprojFile.LoadFromFile(DprojPath);
         Scanner.LoadSettings(SeedDprojFile);
       end else begin
         Writeln('Не найдет Dproj файл');
@@ -170,7 +168,6 @@ begin
       var ProjFile := FindPasInGroupProj(sd, GroupProjFile);
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
         SeedDprojFile := TDprojFile.Create(ProjFile);
-        SeedDprojFile.LoadFromFile(ProjFile);
         Scanner.LoadSettings(SeedDprojFile);
         var Dpr := StringReplace(ProjFile, '.dproj', '.dpr', [rfIgnoreCase]);
         if FileExists(Dpr) then begin
@@ -200,10 +197,7 @@ begin
     ftDproj, ftDpr:
       Scanner.Scan(SeedDprojFile);
     ftPas: begin
-      if DpkFile <> nil then
-        Scanner.Scan(DpkFile, sd)
-      else
-        Scanner.Scan(sd);
+      Scanner.Scan(sd);
     end;
 
   end;
@@ -234,26 +228,12 @@ begin
   NewDprojPath := StringReplace(NewDprojPath, ExtractFileExt(sd), '.dproj', [rfIgnoreCase]);
 
   if (SeedDprojFile <> nil) and (FileType <> ftPas) then begin
-    NewDprojFile := SeedDprojFile.CreateCopy(NewDprojPath);
-
-    NewDprojFile.SaveFile;
+    NewDprojFile := SeedDprojFile.Copy(NewDprojPath);
   end else if FileType = ftPas then begin
     NewDprojFile := TDprojFile.Create(NewDprojPath);
-    NewDprojFile.GenerateBase;
-    NewDprojFile.LoadSettingFrom(SeedDprojFile);
-     if DpkFile <> nil then begin
-        var spArr: TArray<string>;
-        for var sp in Scanner.SearchPaths do begin
-          spArr := spArr + [GetRelativeLink(NewDprojFile.Path, sp)];
-        end;
-        NewDprojFile.SetSearchPath(All, Base, spArr);
-        NewDprojFile.Refresh;
-
-     end;
-
-
-    NewDprojFile.SaveFile;
+    NewDprojFile.LoadSettingsFrom(SeedDprojFile);
   end;
+  NewDprojFile.SaveFile;
 
   {Создаем новый Dpr файл}
   var NewDprPath := StringReplace(sd, Prefix, TargetPath, [rfIgnoreCase]);
@@ -264,12 +244,8 @@ begin
   if SeedDprFile <> nil then begin
     NewDprFile.LoadStructure(SeedDprFile)
   end;
-
-  {Обновляем пути файлов в dpr}
   NewDprFile.Assign(NewDprojFile);
   NewDprFile.UpdateResources(SeedDprojFile);
-
-  {Обновляем пути к юнитам}
   NewDprFile.UpdateUses(FileList);
   NewDprFile.SaveFile;
 
@@ -280,7 +256,6 @@ begin
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
   FreeAndNil(Scanner);
-//  FreeAndNil(FileList);
 
   end;
 
