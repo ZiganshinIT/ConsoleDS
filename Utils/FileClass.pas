@@ -345,7 +345,7 @@ end;
 function TDprojFile.CreateCopy(const FilePath: string): TDprojFile;
 begin
   result := TDprojFile.Create;
-  result.LoadFromFile(self.FPath);
+  result.LoadFromFile(FilePath);
   result.FPath := FilePath;
 
   self.RelinkAll(result);
