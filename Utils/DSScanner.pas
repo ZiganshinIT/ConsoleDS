@@ -6,12 +6,12 @@ interface
 
 uses
   System.Classes, System.Generics.Collections, System.SysUtils, System.Types,
-  System.IOUtils,
+  System.IOUtils, System.SyncObjs,
 
   Duds.Common.Parser.Pascal,
   Duds.Common.Interfaces,
 
-  DSTypes, DSUtils, FileClass, DSConst;
+  DSTypes, DSUtils, FileClass, DSConst, DSCacher;
 
 type
 
@@ -25,7 +25,9 @@ type
     FIgnoreFiles: TStringList;
     FPascalUnitExtractor: TPascalUnitExtractor;
 
-    FSearchPaths: TStringList;
+    FThreadCounter: Integer;
+
+    FCacher: TCacher;
   protected
     procedure StartScan;
     procedure FindFilesFromProject(const ProjectPath: string);
@@ -54,8 +56,6 @@ type
 
     procedure GetResultArrays(out DetectedFiles: TStringList);
 
-    property SearchPaths: TStringList read FSearchPaths;
-
     destructor Destroy;
   end;
 
@@ -65,10 +65,10 @@ implementation
 
 procedure TScanner.AddFile(const FilePath: string);
 begin
-  if FileExists(FilePath) AND (not FFiles.ContainsKey(ExtractFileName(FilePath))) then begin
+  if FileExists(FilePath) AND (FUsedFiles.IndexOf(FilePath) = -1)  then begin
     var index := fUsedFiles.Add(FilePath);
-    FFiles.Add(ExtractFileName(FilePath), index);
-
+//    FFiles.Add(ExtractFileName(FilePath), index);
+    FCacher.AddElement(FilePath);
     // Debug
     Writeln(index.ToString + ' -- ' + FilePath);
   end;
@@ -132,7 +132,7 @@ begin
   FIgnoreFiles  :=   TStringList.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
 
-  FSearchPaths := TStringList.Create;
+  FCacher := TCacher.Create(ParamStr(3), ParamStr(1));
 end;
 
 destructor TScanner.Destroy;
@@ -144,13 +144,10 @@ begin
   FreeAndNil(FUsedFiles);
   FreeAndNil(FIgnoreFiles);
   FreeAndNil(FPascalUnitExtractor);
-
-  FreeAndNil(FSearchPaths);
+  FCacher.Destroy;
 end;
 
 procedure TScanner.DoScan(const FilePath: string);
-var
-  UnitInfo: IUnitInfo;
 begin
   var Extension := LowerCase(ExtractFileExt(FilePath));
   if SameText(Extension, '.pas') OR SameText(Extension, '.dpr') OR SameText(Extension, '.dpk') then begin
@@ -177,28 +174,30 @@ var
   UnitInfo: IUnitInfo;
   Parsed: Boolean;
   pas: string;
+  Arr: TArray<string>;
 begin
-
-  Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
-  if Parsed then begin
-    if UnitInfo.OtherUsedItems.Count > 0 then begin
-      AddOtherFiles(UnitPath, UnitInfo);
+  if FCacher.TryGetUnits(UnitPath, Arr) then begin
+    FUsedFiles.AddStrings(Arr);
+  end else begin
+    FCacher.StartCacheUnit(UnitPath);
+    Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
+    if Parsed then begin
+      if UnitInfo.OtherUsedItems.Count > 0 then begin
+        AddOtherFiles(UnitPath, UnitInfo);
+      end;
+      for var un in UnitInfo.UsedUnits do begin
+        var du := LowerCase(un.DelphiUnitName);
+        {Нужно ли проигнорировать?}
+        if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
+          continue;
+          if fPasFiles.TryGetValue(du + '.pas', pas) then begin
+            AddFile(pas);
+          end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
+            FUsedFiles.Add(du);
+          end;
+      end;
     end;
-
-    for var un in UnitInfo.UsedUnits do begin
-
-      var du := LowerCase(un.DelphiUnitName);
-
-      {Нужно ли проигнорировать?}
-      if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
-        continue;
-
-        if fPasFiles.TryGetValue(du + '.pas', pas) then begin
-          AddFile(pas);
-        end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
-          FUsedFiles.Add(du);
-        end;
-    end;
+    FCacher.EndCacheUnit;
   end;
 end;
 
@@ -368,8 +367,6 @@ procedure TScanner.StartScan;
 begin
   var I := 0;
   while I < FUsedFiles.Count do begin
-    if IsEscPressed then
-      exit;
     DoScan(FUsedFiles[I]);
     Inc(I);
   end;

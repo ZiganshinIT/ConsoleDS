@@ -43,6 +43,7 @@ type
     function GetUsesType: TUsedUnitType;
     function GetOrder: Integer;
     function GetFilename: String;
+    function GetDefines: TArray<string>;
 
     procedure SetPosition(const Value: Integer);
     procedure SetInFilePosition(const Value: Integer);
@@ -50,6 +51,7 @@ type
     procedure SetUsesType(const Value: TUsedUnitType);
     procedure SetOrder(const Value: Integer);
     procedure SetFilename(const Value: String);
+    procedure SetDefines(const Value: TArray<string>);
 
     property DelphiUnitName: String read GetDelphiUnitName write SetDelphiUnitName;
     property Position: Integer read GetPosition write SetPosition;
@@ -57,6 +59,7 @@ type
     property UsesType: TUsedUnitType read GetUsesType write SetUsesType;
     property Order: Integer read GetOrder write SetOrder;
     property Filename: String read GetFilename write SetFilename;
+    property Defines: TArray<string> read GetDefines write SetDefines;
   end;
 
   IUnitInfo = interface

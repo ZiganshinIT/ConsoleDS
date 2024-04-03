@@ -135,6 +135,7 @@ type
   );
 
   TDefine = record
+    DefineTyp: TDefineType;
     Expression: string;
     IsEnable: Boolean;
   end;
@@ -142,7 +143,7 @@ type
   TDefineAnalizator = class
   private
     FFileDefine: TArray<string>;
-    FStack: array of TDefine;
+    FStack: TArray<TDefine>;
     FEnableDefines: TStringList;
     FResult: Boolean;
     procedure TrimDefine(var define: string);
@@ -163,6 +164,9 @@ type
 
     property Result: Boolean read FResult;
     property EnableDefines: TStringList read FEnableDefines write FEnableDefines;
+    property Stack: TArray<TDefine> read FStack;
+
+    function GetDefines: TArray<string>;
 
     destructor Destroy;
   end;
@@ -492,10 +496,11 @@ begin
   while not define.IsEmpty do begin
 
     var d: TDefine;
+    d.DefineTyp := GetDefineType(define);
     d.Expression := GetDefineExpression(define);
     d.IsEnable := IsDefineEnable(define);
 
-    case GetDefineType(define) of
+    case d.DefineTyp of
 
       _IFDEF, _ELSEIF: begin
         self.Add(d);
@@ -579,6 +584,31 @@ begin
     res.Append(words[I]);
   end;
   result := res.ToString;
+end;
+
+function TDefineAnalizator.GetDefines: TArray<string>;
+
+  function IsFileDefine(const DName: string): Boolean;
+  begin
+    result := False;
+    for var FDefine in FFileDefine do begin
+      if SameText(FDefine, DName) then
+        exit(True);
+    end;
+  end;
+
+var List: TStringList;
+begin
+  List := TStringList.Create;
+  List.CaseSensitive := False;
+  if Length(FStack) > 0 then begin
+    for var D in FStack do begin
+      if D.IsEnable AND (D.DefineTyp in [_IFDEF, _ELSEIF]) and (not IsFileDefine(D.Expression)) And (List.IndexOf(D.Expression) = -1) then begin
+        List.Add(D.Expression);
+      end;
+    end;
+  end;
+  result := List.ToStringArray;
 end;
 
 function TDefineAnalizator.GetDefineType(const Define: string): TDefineType;

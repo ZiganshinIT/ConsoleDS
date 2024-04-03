@@ -61,7 +61,6 @@ type
     function GetUsedUnits: TList<IUsedUnitInfo>;
     function GetOtherUsedItems: TDictionary<string, TArray<string>>;
     function GetPreviousUnitName: String;
-
     procedure SetDelphiUnitName(const Value: String);
     procedure SetDelphiFileType(const Value: TDelphiFileType);
     procedure SetFilename(const Value: String);
@@ -77,6 +76,7 @@ type
     property UsedUnits: TList<IUsedUnitInfo> read GetUsedUnits;
     property OtherUsedItems: TDictionary<string, TArray<string>> read GetOtherUsedItems;
     property PreviousUnitName: String read GetPreviousUnitName write SetPreviousUnitName;
+
   public
     constructor Create;
     destructor Destroy; override;
@@ -90,12 +90,14 @@ type
     FUsesType: TUsedUnitType;
     FFilename: String;
     FOrder: Integer;
+    FDefines: TArray<string>;
   private
     function GetPosition: Integer;
     function GetInFilePosition: Integer;
     function GetDelphiUnitName: String;
     function GetUsesType: TUsedUnitType;
     function GetOrder: Integer;
+    function GetDefines: TArray<string>;
 
     procedure SetPosition(const Value: Integer);
     procedure SetInFilePosition(const Value: Integer);
@@ -104,6 +106,7 @@ type
     procedure SetOrder(const Value: Integer);
     procedure SetFilename(const Value: String);
     function GetFilename: String;
+    procedure SetDefines(const Value: TArray<string>);
   public
     property DelphiUnitName: String read GetDelphiUnitName write SetDelphiUnitName;
     property Position: Integer read GetPosition write SetPosition;
@@ -111,6 +114,7 @@ type
     property UsesType: TUsedUnitType read GetUsesType write SetUsesType;
     property Order: Integer read GetOrder write SetOrder;
     property Filename: String read GetFilename write SetFilename;
+    property Defines: TArray<string> read GetDefines write SetDefines;
   end;
 
   TUsedUnits = class(TList<IUsedUnitInfo>);
@@ -349,7 +353,7 @@ var
             UsedUnitInfo.InFilePosition := InFilePos;
             UsedUnitInfo.UsesType := UsesType;
             UsedUnitInfo.Order := UnitInfo.UsedUnits.Count - 1;
-
+            UsedUnitInfo.Defines := FDefineAnalizor.GetDefines;
           end;
         end;
         if Delimiter = ';' then
@@ -415,9 +419,6 @@ begin
   FTokeniser.Next;
 
   UnitInfo.DelphiUnitName := FTokeniser.Token.Text;
-
-  if SameText(UnitInfo.DelphiUnitName, 'gp') then
-    var a := 1;
 
   if SameText(UnitInfo.DelphiUnitName, ExtractFilenameNoExt(UnitFilename)) then
   begin
@@ -489,6 +490,11 @@ begin
   Result := FPosition;
 end;
 
+function TUsedUnitInfo.GetDefines: TArray<string>;
+begin
+  Result := FDefines;
+end;
+
 function TUsedUnitInfo.GetDelphiUnitName: String;
 begin
   Result := FDelphiUnitName;
@@ -507,6 +513,11 @@ end;
 procedure TUsedUnitInfo.SetPosition(const Value: Integer);
 begin
   FPosition := Value;
+end;
+
+procedure TUsedUnitInfo.SetDefines(const Value: TArray<string>);
+begin
+  FDefines := Value;
 end;
 
 procedure TUsedUnitInfo.SetDelphiUnitName(const Value: String);

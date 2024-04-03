@@ -29,7 +29,8 @@ uses
   DSScanner in '..\Utils\DSScanner.pas',
   DSThreads in '..\Utils\DSThreads.pas',
   DSConst in '..\Utils\DSConst.pas',
-  DSDprojTypes in '..\Utils\DSDprojTypes.pas';
+  DSDprojTypes in '..\Utils\DSDprojTypes.pas',
+  DSCacher in '..\Utils\DSCacher.pas';
 
 var
   {Параметры}
@@ -245,7 +246,7 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
-  FreeAndNil(Scanner);
+  Scanner.Destroy;
 
   end;
 
