@@ -181,9 +181,6 @@ begin
 
   Parsed := FPascalUnitExtractor.GetUsedUnits(UnitPath, UnitInfo);
   if Parsed then begin
-
-
-
     if UnitInfo.OtherUsedItems.Count > 0 then begin
       AddOtherFiles(UnitPath, UnitInfo);
     end;
@@ -197,8 +194,6 @@ begin
         continue;
 
         if fPasFiles.TryGetValue(du + '.pas', pas) then begin
-          AddFile(pas);
-        end else if fDcuFiles.TryGetValue(du + '.dcu', pas) then begin
           AddFile(pas);
         end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
           FUsedFiles.Add(du);
@@ -287,7 +282,7 @@ begin
   AddIngoreFilesFromResource;
   var DebuggerSPArr := DprojFile.GetField([Win64], [Cfg_2], DebuggerSourcePath);
   for var DebuggerSP in DebuggerSPArr do begin
-    var Path := CalcPath(DprojFile.Path, DebuggerSP);
+    var Path := CalcPath(DebuggerSP, DprojFile.Path);
     var FoundFiles := TDirectory.GetFiles(Path, '*.*', TSearchOption.soAllDirectories);
     for var F in FoundFiles do begin
       AddIgnoreFile(ExtractFileNameWithoutExt(F));

@@ -49,6 +49,8 @@ type
     procedure GenerateBase;
     {Other}
     procedure Refresh;
+    procedure AddValue(const Platforms: array of TPlatformEnum; const Configs: array of TConfigEnum;
+      const Field: TFields; const Value: string);
   public
     constructor Create;                                                         overload;
     constructor Create(const Path: string);                                     overload;
@@ -275,9 +277,6 @@ begin
         end else if SameText(ExtractFileExt(F), '.pas')  then begin
           var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
           un := Name + ' in ''' + GetRelativeLink(FPath, F) + '''';
-        end else if SameText(ExtractFileExt(F), '.dcu')  then begin
-          var Name := StringReplace(ExtractFileName(F), ExtractFileExt(F), '', [rfIgnoreCase]);
-          un := Name;
         end else
           continue;
 
@@ -298,6 +297,28 @@ begin
 end;
 
 { TDprojFile }
+
+procedure TDprojFile.AddValue(const Platforms: array of TPlatformEnum;
+  const Configs: array of TConfigEnum; const Field: TFields;
+  const Value: string);
+var
+  Arr: array of string;
+begin
+  for var PlatformValue in Platforms do begin
+    for var ConfigValue in Configs do begin
+      var Text := self.ConfigSettings[PlatformValue][ConfigValue][Field];
+      if Text.CountChar(';') > 0 then begin
+        var Values := Text.Split([';']);
+        for var I := 0 to Length(Values)-2 do begin
+          Arr := Arr + [Values[I]];
+        end;
+        Arr := Arr + [Value];
+        Arr := Arr + [Values[Length(Values)-1]];
+      end;
+      self.ConfigSettings[PlatformValue][ConfigValue][Field] := string.Join(';', Arr);
+    end;
+  end;
+end;
 
 function TDprojFile.Copy(const Path: string): TDprojFile;
 begin
@@ -614,6 +635,11 @@ begin
             var AbsolutePath := CalcPath(HostApp, Source.Path);
             AbsolutePath := GetRelativeLink(self.Path, AbsolutePath);
             self.ConfigSettings[PlatformValue][ConfigValue][Field] := AbsolutePath;
+          end;
+
+          NameSpace: begin
+            self.ConfigSettings[PlatformValue][ConfigValue][Field] := Source.ConfigSettings[PlatformValue][ConfigValue][Field];
+            self.AddValue(PlatformValue, ConfigValue, Field, 'IDL');
           end;
 
           else begin

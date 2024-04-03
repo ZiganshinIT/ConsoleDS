@@ -169,16 +169,6 @@ begin
       if (not ProjFile.IsEmpty) AND FileExists(ProjFile) then begin
         SeedDprojFile := TDprojFile.Create(ProjFile);
         Scanner.LoadSettings(SeedDprojFile);
-        var Dpr := StringReplace(ProjFile, '.dproj', '.dpr', [rfIgnoreCase]);
-        if FileExists(Dpr) then begin
-          var a := 1;
-        end;
-
-        var Dpk := StringReplace(ProjFile, '.dproj', '.dpk', [rfIgnoreCase]);
-        if FileExists(Dpk) then begin
-          DpkFile := TDpkFile.Create(Dpk);
-          var a := 1;
-        end;
       end else begin
         Writeln('Файл не найдет в группе проектов');
         Readln;

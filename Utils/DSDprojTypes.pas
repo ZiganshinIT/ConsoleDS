@@ -144,10 +144,12 @@ procedure TConfig.SetStrValue(const Value: string);
 var
   ConfigValue: TConfigEnum;
 begin
-  for ConfigValue := Low(TConfigEnum) to High(TConfigEnum) do begin
-    if GetEnumName(TypeInfo(TConfigEnum), Ord(ConfigValue)) = Value then begin
-      self.Value := ConfigValue;
-    end;
+  if SameText('Base', Value) then begin
+    self.FValue := Base;
+  end else if SameText('Release', Value) OR SameText('Cfg_1', Value) then begin
+    self.FValue := Cfg_1;
+  end else if SameText('Debug', Value) OR SameText('Cfg_2', Value) then begin
+    self.FValue := Cfg_2;
   end;
 end;
 
