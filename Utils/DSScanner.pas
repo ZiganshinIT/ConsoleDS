@@ -27,6 +27,8 @@ type
 
     FThreadCounter: Integer;
 
+    FGroupProjFile: string;
+
     FCacher: TCacher;
   protected
     procedure StartScan;
@@ -48,7 +50,7 @@ type
     procedure DoScanRCFiles(const RCFilePath: string);
 
   public
-    constructor Create;
+    constructor Create(const GroupProjFile: string);
 
     procedure LoadSettings(const DprojFile: TDprojFile);
     procedure Scan(const Dprojfile: TDprojFile);                                overload;
@@ -117,22 +119,22 @@ begin
   end;
 end;
 
-constructor TScanner.Create;
+constructor TScanner.Create(const GroupProjFile: string);
 begin
-  var Param := ParamStr(3);
+  FGroupProjFile := GroupProjFile;
 
   FPasFiles     :=   TDictionary<string, string>.Create;
   FDcuFiles     :=   TDictionary<string, string>.Create;
 
-  if SameText(ExtractFileExt(Param), '.groupproj') AND FileExists(Param) then
-    FDprojFiles   :=   ParseUsedProject(Param);
+  if SameText(ExtractFileExt(FGroupProjFile), '.groupproj') AND FileExists(FGroupProjFile) then
+    FDprojFiles   :=   ParseUsedProject(FGroupProjFile);
 
   FFiles        :=   TDictionary<string, integer>.Create;
   FUsedFiles    :=   TStringList.Create;
   FIgnoreFiles  :=   TStringList.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
 
-  FCacher := TCacher.Create(ParamStr(3), ParamStr(1));
+  FCacher := TCacher.Create(FGroupProjFile, ParamStr(1));
 end;
 
 destructor TScanner.Destroy;
@@ -302,7 +304,7 @@ begin
         var ProjectName := PathParts[Length(PathParts)-1];
         var ProjectPath: string;
         if FDprojFiles.TryGetValue(LowerCase(ProjectName), ProjectPath) then begin
-          ProjectPath := CalcPath(ProjectPath, ParamStr(3));
+          ProjectPath := CalcPath(ProjectPath, FGroupProjFile);
           FindFilesFromProject(ProjectPath);
         end;
         {DCU Files}
@@ -328,7 +330,7 @@ begin
         var Dproj: string;
         if FDprojFiles.TryGetValue(LowerCase(Used[Counter]), Dproj) then begin
           var dpkLocal := stringReplace(dproj, '.dproj', '.dpk', [rfIgnoreCase]);
-          var dpkAbsolute := CalcPath(dpkLocal, ParamStr(3));
+          var dpkAbsolute := CalcPath(dpkLocal, FGroupProjFile);
           var Dpk := TDpkFile.Create(dpkAbsolute);
 
           for var R in Dpk.Requires do begin

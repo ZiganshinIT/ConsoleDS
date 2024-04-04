@@ -37,6 +37,7 @@ var
   TargetPath    : string;
   GroupProjFile : string;
   WithCopy      : Boolean;
+  BATLocation   : string;
 
   {Основыне файлы}
   SeedDprojFile: TDprojFile;
@@ -72,17 +73,25 @@ begin
       exit;
     end;
 
-    2, 3: begin
+    2..3: begin
       Writeln('Переданно недостаточно параметров');
       Readln;
       exit;
     end;
 
-    4: begin
+    5: begin
+      {Параметр 5}
+      BATLocation := ParamStr(5);
+
       {Параметр 1}
       SeedFiles := ParamStr(1).Split([';']);
 
-      for var sd in SeedFiles do begin
+      for var I := 0 to Pred(Length(SeedFiles)) do begin
+
+        if IsRelativePath(SeedFiles[I]) then
+          SeedFiles[I] := CalcPath(SeedFiles[I], BATLocation);
+
+        var sd := SeedFiles[I];
 
         if FileExists(sd) then begin
           FileType := GetFileType(sd);
@@ -98,6 +107,10 @@ begin
 
       {Параметр 2}
       TargetPath := ParamStr(2);
+
+      if IsRelativePath(TargetPath) then
+        TargetPath := CalcPath(TargetPath, BATLocation);
+
       if not TRegEx.IsMatch(TargetPath, PathRegex) then begin
         Writeln('Параметр ' + TargetPath + ' не является путем');
         Readln;
@@ -106,7 +119,11 @@ begin
 
       {Параметр 3}
       GroupProjFile := ParamStr(3);
-      if not FileExists(ParamStr(3)) then begin
+
+      if IsRelativePath(GroupProjFile) then
+        GroupProjFile := CalcPath(GroupProjFile, BATLocation);
+
+      if not FileExists(GroupProjFile) then begin
         WriteLn('Файла ' + GroupProjFile + ' не существует');
         Readln;
         exit;
@@ -136,7 +153,7 @@ begin
   for var sd in SeedFiles do begin
 
   if Scanner = nil then
-    Scanner := TScanner.Create;
+    Scanner := TScanner.Create(GroupProjFile);
 
   FileType := GetFileType(sd);
 
