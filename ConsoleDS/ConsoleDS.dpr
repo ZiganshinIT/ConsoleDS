@@ -7,6 +7,7 @@
 uses
   Winapi.Windows,
   System.SysUtils,
+  Registry,
   System.Classes,
   System.Types,
   System.IOUtils,
@@ -61,6 +62,18 @@ begin
 end;
 
 begin
+
+  var Reg := TRegistry.Create;
+  try
+    Reg.RootKey := HKEY_CURRENT_USER; // Вы можете выбрать другой корневой ключ, если необходимо
+    if Reg.OpenKey('\Software\ConsoleDS', True) then
+    begin
+      Reg.WriteString('Path', ParamStr(0)); // Замените на актуальный путь
+      Reg.CloseKey;
+    end;
+  finally
+    Reg.Free;
+  end;
 
   {Проверка параметров}
   case ParamCount of

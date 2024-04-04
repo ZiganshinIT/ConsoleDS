@@ -8,7 +8,7 @@ uses
   Vcl.Dialogs, Vcl.StdCtrls,
 
   System.SysUtils, System.StrUtils, System.Math, System.Classes, System.IOUtils,
-  System.Types, System.Generics.Collections,
+  System.Types, System.Generics.Collections, Registry,
 
   XMLDoc, XMLIntf;
 
@@ -53,6 +53,8 @@ type
   function GetFileType(const FilePath: string): TFileType;
 
   function FindPasinGroupProj(const FilePath: string; const GroupProjFile: string): string;
+
+  function ModifySystemPath(const NewPath: string): Boolean;
 
 implementation
 
@@ -448,6 +450,40 @@ begin
 
   finally
     XMLDoc := nil;
+  end;
+end;
+
+function ModifySystemPath(const NewPath: string): Boolean;
+var
+  EnvVar: string;
+  CurrentPath: string;
+begin
+  EnvVar := 'PATH';
+  SetLength(CurrentPath, MAX_PATH);
+  if GetEnvironmentVariable(PWideChar(EnvVar), PWideChar(CurrentPath), MAX_PATH) > 0 then
+  begin
+    CurrentPath := PWideChar(CurrentPath);
+    CurrentPath := NewPath + ';' + CurrentPath;
+    Result := SetEnvironmentVariable(PChar(EnvVar), PChar(CurrentPath));
+  end
+  else
+    Result := False;
+end;
+
+procedure WriteToRegistry;
+var
+  Reg: TRegistry;
+begin
+  Reg := TRegistry.Create;
+  try
+    Reg.RootKey := HKEY_CURRENT_USER; // Вы можете выбрать другой корневой ключ, если необходимо
+    if Reg.OpenKey('\Software\ConsoleDS', True) then
+    begin
+      Reg.WriteString('Path', 'C:\Путь\К\Вашему\Приложению.exe'); // Замените на актуальный путь
+      Reg.CloseKey;
+    end;
+  finally
+    Reg.Free;
   end;
 end;
 
