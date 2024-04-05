@@ -42,7 +42,8 @@ const
     'BRCC_OutputDir',
     'Debugger_HostApplication',
     'DCC_WriteableConstants',
-    'DCC_Namespace'
+    'DCC_Namespace',
+    'DCC_ExeOutput'
   );
 
   function GenerateDPROJ: TStringList;

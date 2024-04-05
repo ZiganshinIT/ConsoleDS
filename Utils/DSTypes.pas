@@ -19,7 +19,8 @@ type
     ResourceOutputPath,
     HostApplication,
     WriteableConstants,
-    NameSpace
+    NameSpace,
+    OutputDirectory
   );
 
 const

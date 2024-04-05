@@ -56,6 +56,9 @@ var
 
   Scanner: TScanner;
 
+  NeedGroupProj: Boolean;
+  GroupProj: TGroupProjFile;
+
 procedure ShowHelp;
 begin
   Writeln('Вспомогательная информация')
@@ -98,6 +101,8 @@ begin
 
       {Параметр 1}
       SeedFiles := ParamStr(1).Split([';']);
+
+      NeedGroupProj := Length(SeedFiles) > 1;
 
       for var I := 0 to Pred(Length(SeedFiles)) do begin
 
@@ -163,10 +168,14 @@ begin
   InputThread.FreeOnTerminate := True;
   InputThread.Start;
 
-  for var sd in SeedFiles do begin
+  var GroupProjPath := TargetPath + ExtractFileName(GroupProjFile);
+  if NeedGroupProj then begin
+    GroupProj := TGroupProjFile.Create(GroupProjPath);
+  end;
 
-  if Scanner = nil then
-    Scanner := TScanner.Create(GroupProjFile);
+  Scanner := TScanner.Create(GroupProjFile);
+
+  for var sd in SeedFiles do begin
 
   FileType := GetFileType(sd);
 
@@ -256,6 +265,11 @@ begin
   end;
   NewDprojFile.SaveFile;
 
+  if NeedGroupProj then begin
+    GroupProj.AddProject(GetRelativeLink(GroupProjPath, NewDprojPath));
+  end;
+
+
   {Создаем новый Dpr файл}
   var NewDprPath := StringReplace(sd, Prefix, TargetPath, [rfIgnoreCase]);
   NewDprPath := StringReplace(NewDprPath, ExtractFileExt(sd), '.dpr', [rfIgnoreCase]);
@@ -276,9 +290,15 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
-  Scanner.Destroy;
+
 
   end;
+
+  if NeedGroupProj then begin
+    GroupProj.SaveFile;
+  end;
+
+  Scanner.Destroy;
 
 end.
 

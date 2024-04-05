@@ -118,16 +118,18 @@ type
   TGroupProjFile = class
   private
     FPath: string;
-    FProjects: TDictionary<string, TDprojFile>;
+    FProjects: TStringList;
   protected
     procedure LoadProjects;
     procedure SetPath(const Value: string);
   public
-    constructor Create;                                                         overload;
     constructor Create(const Path: string);                                     overload;
 
+    procedure AddProject(const ProjectPath: string);
+    procedure SaveFile;
+
     property Path: string read FPath write SetPath;
-    property Projects: TDictionary<string, TDprojFile> read FProjects;
+    property Projects: TStringList read FProjects;
 
     destructor  Destroy;
   end;
@@ -630,7 +632,7 @@ begin
             self.ConfigSettings[PlatformValue][ConfigValue][Field] := string.Join(';', Arr);
           end;
 
-          HostApplication: begin
+          HostApplication, OutputDirectory: begin
             var HostApp := Source.ConfigSettings[PlatformValue][ConfigValue][Field];
             var AbsolutePath := CalcPath(HostApp, Source.Path);
             AbsolutePath := GetRelativeLink(self.Path, AbsolutePath);
@@ -718,15 +720,19 @@ end;
 
 { TGroupProjFile }
 
-constructor TGroupProjFile.Create;
+procedure TGroupProjFile.AddProject(const ProjectPath: string);
 begin
-  FProjects := TDictionary<string, TDprojFile>.Create;
+  if FProjects.IndexOf(ProjectPath) = -1 then begin
+    FProjects.Add(ProjectPath);
+  end;
 end;
 
 constructor TGroupProjFile.Create(const Path: string);
 begin
-  self.Create;
+  FProjects := TStringList.Create;
   FPath := Path;
+  if FileExists(FPath) then
+    LoadProjects;
 end;
 
 destructor TGroupProjFile.Destroy;
@@ -742,6 +748,95 @@ begin
 //    DprojFile.LoadFromFile(Project); // исправить
 //    FProjects.Add(LowerCase(ExtractFileNameWithoutExt(Project)), DprojFile);
 //  end;
+end;
+
+procedure TGroupProjFile.SaveFile;
+var
+  GUID: TGUID;
+  Strings: TStringList;
+
+  TargetFiles: TArray<string>;
+begin
+  Strings := TStringList.Create;
+
+  CreateGUID(GUID);
+
+  Strings.Add('<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">');
+    Strings.Add('<PropertyGroup>');
+      Strings.Add(Format('<ProjectGuid>%s</ProjectGuid>', [GUID.ToString]));
+    Strings.Add('</PropertyGroup>');
+    Strings.Add('<ItemGroup>');
+      for var Project in Projects do begin
+        Strings.Add(Format('<Projects Include="%s">', [Project]));
+          Strings.Add('<Dependencies/>');
+        Strings.Add('</Projects>');
+      end;
+    Strings.Add('</ItemGroup>');
+    Strings.Add('<ProjectExtensions>');
+      Strings.Add('<Borland.Personality>Default.Personality.12</Borland.Personality>');
+      Strings.Add('<Borland.ProjectType/>');
+      Strings.Add('<BorlandProject>');
+        Strings.Add('<Default.Personality/>');
+      Strings.Add('</BorlandProject>');
+    Strings.Add('</ProjectExtensions>');
+
+    for var Project in Projects do begin
+      var Targets: string;
+      for var I := 1 to 3 do begin
+        case I of
+          2: Targets := 'Clean';
+          3: Targets := 'Make';
+        end;
+        var Name := TStringBuilder.Create;
+        Name.Append(ExtractFileNameWithoutExt(Project));
+        if not Targets.IsEmpty then begin
+          Name.Append(':' + Targets);
+        end;
+
+        var msBuildAttr := TStringBuilder.Create;
+        msBuildAttr.Append(Format('Projects="%s"', [Project]));
+        if not Targets.IsEmpty then begin
+          msBuildAttr.Append(Format(' Targets="%s"', [Targets]));
+        end;
+        msBuildAttr.Append('/');
+
+        Strings.Add(Format('<Target Name="%s">', [Name.ToString]));
+          Strings.Add(Format('<MSBuild %s>', [msBuildAttr.ToString]));
+        Strings.Add('</Target>');
+      end;
+      TargetFiles := TargetFiles + [ExtractFileNameWithoutExt(Project)];
+    end;
+
+    for var I := 1 to 3 do begin
+      var TargetName: string;
+      case I of
+        1: TargetName := 'Build';
+        2: TargetName := 'Clean';
+        3: TargetName := 'Make';
+      end;
+
+      var FilesString := TStringBuilder.Create;
+      for var II := 0 to High(TargetFiles) do begin
+        var F := TargetFiles[II];
+
+        FilesString.Append(F);
+        if I > 1 then
+          FilesString.Append(':' + TargetName);
+
+        if II < High(TargetFiles) then begin
+          FilesString.Append(';')
+        end;
+
+      end;
+
+      Strings.Add(Format('<Target Name="%s">', [TargetName]));
+        Strings.Add(Format('<CallTarget Targets="%s"/>', [FilesString.ToString]));
+      Strings.Add('</Target>');
+    end;
+  Strings.Add('<Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists(''$(BDS)\Bin\CodeGear.Group.Targets'')"/>');
+  Strings.Add('</Project>');
+
+  Strings.SaveToFile(FPath);
 end;
 
 procedure TGroupProjFile.SetPath(const Value: string);
