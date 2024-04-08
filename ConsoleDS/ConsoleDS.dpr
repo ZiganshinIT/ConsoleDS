@@ -127,7 +127,11 @@ begin
       TargetPath := ParamStr(2);
 
       if IsRelativePath(TargetPath) then
-        TargetPath := CalcPath(TargetPath, BATLocation);
+        TargetPath := CalcPath(TargetPath, BATLocation)
+      else if SameText(TargetPath, '\') then
+        TargetPath := BATLocation;
+
+
 
       if not TRegEx.IsMatch(TargetPath, PathRegex) then begin
         Writeln('Параметр ' + TargetPath + ' не является путем');
@@ -176,7 +180,6 @@ begin
   Scanner := TScanner.Create(GroupProjFile);
 
   for var sd in SeedFiles do begin
-
   FileType := GetFileType(sd);
 
   case FileType of
@@ -290,6 +293,7 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
+  FileList.clear;
 
 
   end;
@@ -297,6 +301,11 @@ begin
   if NeedGroupProj then begin
     GroupProj.SaveFile;
   end;
+
+  FreeAndNil(SeedDprojFile);
+  FreeAndNil(SeedDprFile);
+  FreeAndNil(NewDprojFile);
+  FreeAndNil(NewDprFile);
 
   Scanner.Destroy;
 

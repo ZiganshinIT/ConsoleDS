@@ -49,6 +49,8 @@ type
     procedure DoScanUnit(const UnitPath: string);
     procedure DoScanRCFiles(const RCFilePath: string);
 
+    procedure Clear;
+
   public
     constructor Create(const GroupProjFile: string);
 
@@ -119,6 +121,15 @@ begin
   end;
 end;
 
+procedure TScanner.Clear;
+begin
+  FPasFiles.Clear;
+  FDcuFiles.Clear;
+  FFiles.Clear;
+  FUsedFiles.Clear;
+  FIgnoreFiles.Clear;
+end;
+
 constructor TScanner.Create(const GroupProjFile: string);
 begin
   FGroupProjFile := GroupProjFile;
@@ -143,7 +154,8 @@ begin
   FreeAndNil(FDcuFiles);
   FreeAndNil(FDprojFiles);
   FreeAndNil(FFiles);
-  FreeAndNil(FUsedFiles);
+  if FUsedFiles <> nil then
+    FreeAndNil(FUsedFiles);
   FreeAndNil(FIgnoreFiles);
   FreeAndNil(FPascalUnitExtractor);
   FCacher.Destroy;
@@ -274,6 +286,8 @@ end;
 {Опеределяет настройки сканера}
 procedure TScanner.LoadSettings(const DprojFile: TDprojFile);
 begin
+  self.Clear;
+
   { Добавляет доступные define проекта }
   FPascalUnitExtractor.DefineAnalizator.EnableDefines.Add('MSWINDOWS');
   FPascalUnitExtractor.DefineAnalizator.EnableDefines.AddStrings(DprojFile.GetField([All, Win64], [Base, Cfg_2], Definies));
