@@ -514,8 +514,10 @@ begin
       end;
 
       _ELSE: begin
-        if (Length(FStack) > 0) AND (not Top.IsEnable) then
+        if (Length(FStack) > 0) AND (not Top.IsEnable) then begin
+          FStack[Length(FStack)-1].IsEnable := not FStack[Length(FStack)-1].IsEnable;
           FResult := true;
+        end;
       end;
 
       _ENDIF: begin

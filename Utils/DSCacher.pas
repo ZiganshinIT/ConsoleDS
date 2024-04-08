@@ -10,6 +10,8 @@ type
   TCacher = class
   private
     FList: TStringList;
+    FGroupProjFile: string;
+
     FIsUnitCache : Boolean;
     FCurrentFileName: string;
     FUnitName: string;
@@ -18,11 +20,15 @@ type
   protected
 
   public
-    constructor Create(const GroupProjFile: string; const SeedFile: string);
+    constructor Create(const GroupProjFile: string);
+
+    procedure Load(const DprojName: string);
 
     procedure StartCacheUnit(const UnitPath: string);
     procedure AddElement(const ElementPath: string);
     procedure EndCacheUnit;
+
+    procedure Save;
 
     function TryGetUnits(const UnitName: string; var Arr: TArray<string>): Boolean;
 
@@ -35,27 +41,20 @@ implementation
 
 { TCacher }
 
-constructor TCacher.Create(const GroupProjFile: string; const SeedFile: string);
+constructor TCacher.Create(const GroupProjFile: string);
 begin
-
-  var APPDATA := GetEnvironmentVariable('APPDATA');
-  var GPName  := StringReplace(ExtractFileName(GroupProjFile), ExtractFileExt(GroupProjFile), '', [rfIgnoreCase]);
-  var GPAge   := FileAge(GroupProjFile);
-  var SFName  := StringReplace(ExtractFileName(SeedFile), ExtractFileExt(SeedFile), '', [rfIgnoreCase]);
-  var SFAge   := FileAge(SeedFile);
-
-  FCurrentFileName := APPDATA + '\' + GPName + '_' + GPAge.ToString + '_' + SFName + '.cache';
-
+  FGroupProjFile := GroupProjFile;
   FList := TStringList.Create;
-  if FileExists(FCurrentFileName) then begin
-    FList.LoadFromFile(FCurrentFileName);
-  end;
 end;
 
 destructor TCacher.Destroy;
 begin
-  FList.SaveToFile(FCurrentFileName);
   FreeAndNil(FList);
+end;
+
+procedure TCacher.Save;
+begin
+  FList.SaveToFile(FCurrentFileName);
 end;
 
 procedure TCacher.StartCacheUnit(const UnitPath: string);
@@ -112,6 +111,22 @@ begin
   FIsUnitCache := False;
   var Text := FUnitName + ' {' + FileAge(FUnitName).ToString  + '}' + ' [' + string.Join(';', FUnits) + ']';
   FList.Insert(FIndex, Text);
+end;
+
+procedure TCacher.Load(const DprojName: string);
+begin
+  FList.Clear;
+  var APPDATA := GetEnvironmentVariable('APPDATA');
+  var GPName  := StringReplace(ExtractFileName(FGroupProjFile), ExtractFileExt(FGroupProjFile), '', [rfIgnoreCase]);
+  var GPAge   := FileAge(FGroupProjFile);
+  var SFName  := StringReplace(ExtractFileName(DprojName), ExtractFileExt(DprojName), '', [rfIgnoreCase]);
+  var SFAge   := FileAge(DprojName);
+
+  FCurrentFileName := APPDATA + '\' + GPName + '_' + GPAge.ToString + '_' + SFName + '.cache';
+
+  if FileExists(FCurrentFileName) then begin
+    FList.LoadFromFile(FCurrentFileName);
+  end;
 end;
 
 end.

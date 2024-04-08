@@ -58,7 +58,7 @@ type
     procedure Scan(const Dprojfile: TDprojFile);                                overload;
     procedure Scan(const Files: array of string);                               overload;
 
-    procedure GetResultArrays(out DetectedFiles: TStringList);
+    procedure GetResultArrays(var DetectedFiles: TStringList);
 
     destructor Destroy;
   end;
@@ -128,6 +128,8 @@ begin
   FFiles.Clear;
   FUsedFiles.Clear;
   FIgnoreFiles.Clear;
+
+  FPascalUnitExtractor.DefineAnalizator.EnableDefines.Clear;
 end;
 
 constructor TScanner.Create(const GroupProjFile: string);
@@ -145,7 +147,7 @@ begin
   FIgnoreFiles  :=   TStringList.Create;
   FPascalUnitExtractor := TPascalUnitExtractor.Create(nil);
 
-  FCacher := TCacher.Create(FGroupProjFile, ParamStr(1));
+  FCacher := TCacher.Create(FGroupProjFile);
 end;
 
 destructor TScanner.Destroy;
@@ -158,7 +160,7 @@ begin
     FreeAndNil(FUsedFiles);
   FreeAndNil(FIgnoreFiles);
   FreeAndNil(FPascalUnitExtractor);
-  FCacher.Destroy;
+  FreeAndNil(FCacher);
 end;
 
 procedure TScanner.DoScan(const FilePath: string);
@@ -190,6 +192,9 @@ var
   pas: string;
   Arr: TArray<string>;
 begin
+  if SameText(ExtractFileNameWithoutExt(UnitPath), 'SynEdit') then
+    var a := 1;
+
   if FCacher.TryGetUnits(UnitPath, Arr) then begin
     FUsedFiles.AddStrings(Arr);
   end else begin
@@ -201,6 +206,10 @@ begin
       end;
       for var un in UnitInfo.UsedUnits do begin
         var du := LowerCase(un.DelphiUnitName);
+
+        if SameText(du, 'SynEditWordWrap') then
+          var a := 1;
+
         {Нужно ли проигнорировать?}
         if (fIgnoreFiles.IndexOf(du) <> -1) And (not SameText(ExtractFileExt(UnitPath), '.dpr')) then
           continue;
@@ -208,6 +217,7 @@ begin
             AddFile(pas);
           end else if SameText(ExtractFileExt(UnitPath), '.dpr') then begin
             FUsedFiles.Add(du);
+            FCacher.AddElement(du);
           end;
       end;
     end;
@@ -278,7 +288,7 @@ begin
   FreeAndNil(List);
 end;
 
-procedure TScanner.GetResultArrays(out DetectedFiles: TStringList);
+procedure TScanner.GetResultArrays(var DetectedFiles: TStringList);
 begin
   DetectedFiles := FUsedFiles;
 end;
@@ -287,6 +297,8 @@ end;
 procedure TScanner.LoadSettings(const DprojFile: TDprojFile);
 begin
   self.Clear;
+
+  FCacher.Load(DprojFile.Path);
 
   { Добавляет доступные define проекта }
   FPascalUnitExtractor.DefineAnalizator.EnableDefines.Add('MSWINDOWS');
@@ -377,6 +389,7 @@ begin
     AddFile(F);
   end;
   StartScan;
+  FCacher.Save;
 end;
 
 procedure TScanner.StartScan;
@@ -403,6 +416,7 @@ begin
     end;
     StartScan;
   end;
+  FCacher.Save;
 end;
 
 end.

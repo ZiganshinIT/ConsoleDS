@@ -4,7 +4,7 @@
         <ProjectVersion>19.5</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
-        <Config Condition="'$(Config)'==''">Release</Config>
+        <Config Condition="'$(Config)'==''">Debug</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
         <TargetedPlatforms>3</TargetedPlatforms>
         <AppType>Console</AppType>
@@ -114,6 +114,7 @@
         <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <Debugger_RunParams>SprutCAM40\SCKernel\main\SCKernel.dproj;NCKernel\NCKernel.dproj  C:\Test111\ SprutCAM.groupproj 0 C:\Source\SprutCAM\</Debugger_RunParams>
         <DCC_WriteableConstants>true</DCC_WriteableConstants>
+        <DCC_DebugDCUs>false</DCC_DebugDCUs>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>

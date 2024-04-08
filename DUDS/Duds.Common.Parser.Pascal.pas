@@ -299,8 +299,6 @@ var
     FTokeniser.ReadMode := ReadModeStore;
   end;
 
-
-
   procedure ExtractUnits(UsesType: TUsedUnitType);
   var
     Delimiter: string; // текущий разделитель
@@ -309,7 +307,7 @@ var
     InFilePos: Integer;
   begin
     FDefineAnalizor.ClearStack;
-//    var IsAvailable := True; // флаг определ€ющий будет ли добавлен unit
+
     while not FTokeniser.Eof do begin
       FTokeniser.Next([',' , ';'], Delimiter);
 
@@ -323,7 +321,7 @@ var
             FDefineAnalizor.Analize(word);
             IsAvailable := FDefineAnalizor.Result;
 
-          end else if IsAvailable then begin
+           end else if IsAvailable then begin
             UsedUnitInfo := TUsedUnitInfo.Create;
             UnitInfo.UsedUnits.Add(UsedUnitInfo);
 
@@ -356,7 +354,7 @@ var
             UsedUnitInfo.Defines := FDefineAnalizor.GetDefines;
           end;
         end;
-        if Delimiter = ';' then
+        if (Delimiter = ';') AND IsAvailable then
           Break;
       end;
     end;

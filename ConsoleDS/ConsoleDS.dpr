@@ -50,7 +50,6 @@ var
   DpkFile: TDpkFile;
 
   FileType: TFileType;
-  FileList: TStringList;
 
   SeedFiles: TArray<string>;
 
@@ -234,6 +233,9 @@ begin
     end;
 
   end;
+
+  var FileList := TStringList.Create;
+
   Scanner.GetResultArrays(FileList);
   Writeln('Конец Сканироания...');
 
@@ -293,8 +295,6 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
-  FileList.clear;
-
 
   end;
 
