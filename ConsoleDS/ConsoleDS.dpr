@@ -53,6 +53,8 @@ var
 
   SeedFiles: TArray<string>;
 
+  FileList: TStringList;
+
   Scanner: TScanner;
 
   NeedGroupProj: Boolean;
@@ -178,6 +180,8 @@ begin
 
   Scanner := TScanner.Create(GroupProjFile);
 
+  FileList := TStringList.Create;
+
   for var sd in SeedFiles do begin
   FileType := GetFileType(sd);
 
@@ -233,8 +237,6 @@ begin
     end;
 
   end;
-
-  var FileList := TStringList.Create;
 
   Scanner.GetResultArrays(FileList);
   Writeln('Конец Сканироания...');
@@ -306,6 +308,7 @@ begin
   FreeAndNil(SeedDprFile);
   FreeAndNil(NewDprojFile);
   FreeAndNil(NewDprFile);
+  FileList.Clear;
 
   Scanner.Destroy;
 

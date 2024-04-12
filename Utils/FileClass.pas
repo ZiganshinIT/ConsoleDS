@@ -633,10 +633,12 @@ begin
           end;
 
           HostApplication, OutputDirectory: begin
-            var HostApp := Source.ConfigSettings[PlatformValue][ConfigValue][Field];
-            var AbsolutePath := CalcPath(HostApp, Source.Path);
-            AbsolutePath := GetRelativeLink(self.Path, AbsolutePath);
-            self.ConfigSettings[PlatformValue][ConfigValue][Field] := AbsolutePath;
+            var Link := Source.ConfigSettings[PlatformValue][ConfigValue][Field];
+            if not  Link.IsEmpty then begin
+              var AbsoluteLink := CalcPath(Link, Source.Path);
+              AbsoluteLink := GetRelativeLink(self.Path, AbsoluteLink);
+              self.ConfigSettings[PlatformValue][ConfigValue][Field] := AbsoluteLink;
+            end;
           end;
 
           NameSpace: begin

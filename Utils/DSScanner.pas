@@ -207,7 +207,7 @@ begin
       for var un in UnitInfo.UsedUnits do begin
         var du := LowerCase(un.DelphiUnitName);
 
-        if SameText(du, 'SynEditWordWrap') then
+        if SameText(du, 'CLDTransformer') then
           var a := 1;
 
         {Нужно ли проигнорировать?}
